@@ -21,6 +21,9 @@ node_modules/
 .vscode/
 .idea/
 
+# Examples (reference only, not part of our project)
+innovation-lab-examples/
+
 # OS
 .DS_Store
 Thumbs.db
