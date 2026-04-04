@@ -24,8 +24,8 @@ from uagents_core.contrib.protocols.chat import (
     chat_protocol_spec,
 )
 
-from agents.models.config import HEALTH_AGENT_SEED
-from agents.models.messages import (
+from backend.agents.models.config import HEALTH_AGENT_SEED
+from backend.agents.models.messages import (
     EventCandidate,
     HealthEvalRequest,
     HealthEvalResponse,
@@ -33,10 +33,10 @@ from agents.models.messages import (
     Observation,
     PolicyReference,
 )
-from agents.health.policy_resolver import resolve_policy
-from agents.health.adjudicator import adjudicate
-from agents.health.severity import assign_severity, SEVERITY_LEVELS
-from agents.health.coach import get_coaching_text
+from backend.agents.health.policy_resolver import resolve_policy
+from backend.agents.health.adjudicator import adjudicate
+from backend.agents.health.severity import assign_severity, SEVERITY_LEVELS
+from backend.agents.health.coach import get_coaching_text
 
 
 health_agent = Agent(

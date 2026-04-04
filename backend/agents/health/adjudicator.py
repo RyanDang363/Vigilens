@@ -13,7 +13,7 @@ severity and coaching tone, but the finding still exists in the report.
 
 from __future__ import annotations
 
-from agents.models.messages import EventCandidate
+from backend.agents.models.messages import EventCandidate
 
 # Base confidence thresholds
 CONFIRMED_THRESHOLD = 0.80

@@ -9,16 +9,16 @@ import os
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
-from agents.models.messages import (
+from backend.agents.models.messages import (
     Observation,
     EventCandidate,
     HealthFinding,
     PolicyReference,
 )
-from agents.health.policy_resolver import resolve_policy
-from agents.health.adjudicator import adjudicate
-from agents.health.severity import assign_severity
-from agents.health.coach import get_coaching_text
+from backend.agents.health.policy_resolver import resolve_policy
+from backend.agents.health.adjudicator import adjudicate
+from backend.agents.health.severity import assign_severity
+from backend.agents.health.coach import get_coaching_text
 
 
 def build_event(event_id: str, observations: list[dict], corrective: bool = None) -> EventCandidate:
