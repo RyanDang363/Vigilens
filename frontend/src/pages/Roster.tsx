@@ -8,6 +8,7 @@ import {
   type Employee,
   type FindingWithEmployee,
 } from "../lib/api";
+import { normalizeObservationGrammar } from "../lib/reasoning";
 
 // ─── Color maps ─────────────────────────────────────────────────────
 const SEVERITY_PILL: Record<string, string> = {
@@ -45,8 +46,14 @@ const CLASS_ICON: Record<string, string> = {
   house_rule: "🏠",
 };
 
+/** Native <select> uses OS chrome (inset / gradient) unless appearance is reset. */
+const ROSTER_SELECT_CLASS =
+  "text-sm min-h-[2.5rem] cursor-pointer rounded-lg border border-gray-200 bg-white pl-3 pr-9 py-2 shadow-none " +
+  "transition-colors focus:outline-none focus:ring-2 focus:ring-blue-400 " +
+  "appearance-none bg-[length:1rem] bg-[position:right_0.625rem_center] bg-no-repeat " +
+  "bg-[url('data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20width%3D%2216%22%20height%3D%2216%22%20viewBox%3D%220%200%2024%2024%22%20fill%3D%22none%22%20stroke%3D%22%236b7280%22%20stroke-width%3D%222%22%3E%3Cpath%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%20d%3D%22M6%209l6%206%206-6%22%2F%3E%3C%2Fsvg%3E')]";
+
 type ViewMode = "employees" | "offenses" | "positions";
-type SortDir = "asc" | "desc";
 type SortField = "name" | "findings" | "severity";
 type OffenseClassFilter = "all" | "code_backed_food_safety" | "workplace_safety_rule" | "efficiency" | "house_rule";
 
@@ -83,7 +90,7 @@ function StatCard({
   );
 }
 
-// ─── Offense card (grouped finding type) ────────────────────────────
+// ─── Infraction-type card (grouped by concluded_type) ───────────────
 interface OffenseGroup {
   concludedType: string;
   findingClass: string;
@@ -101,13 +108,13 @@ function OffenseCard({ group }: { group: OffenseGroup }) {
     >
       <button
         onClick={() => setExpanded(!expanded)}
-        className="w-full text-left p-5 flex items-center justify-between cursor-pointer"
+        className="w-full text-left p-5 grid grid-cols-1 gap-4 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center sm:gap-6 cursor-pointer"
       >
-        <div className="flex items-center gap-3">
-          <span className="text-2xl">
+        <div className="flex items-center gap-3 min-w-0">
+          <span className="text-2xl shrink-0">
             {CLASS_ICON[group.findingClass] || "📋"}
           </span>
-          <div>
+          <div className="min-w-0">
             <h2 className="text-lg font-semibold text-gray-900">
               {formatType(group.concludedType)}
             </h2>
@@ -123,33 +130,40 @@ function OffenseCard({ group }: { group: OffenseGroup }) {
           </div>
         </div>
 
-        <div className="flex items-center gap-4 text-sm">
-          <div className="text-right">
-            <p className="text-xs text-gray-400 uppercase tracking-wide">Occurrences</p>
-            <p className="text-xl font-bold text-gray-900">{group.totalCount}</p>
+        {/* Fixed columns so Occurrences + severity + chevron line up across every card */}
+        <div className="grid grid-cols-[5.75rem_7.5rem_1.5rem] items-center gap-3 text-sm sm:justify-self-end shrink-0">
+          <div className="text-center w-full">
+            <p className="text-xs text-gray-400 uppercase tracking-wide leading-tight">
+              Occurrences
+            </p>
+            <p className="text-xl font-bold text-gray-900 tabular-nums">{group.totalCount}</p>
           </div>
-          <span
-            className={`px-3 py-1 rounded-full text-xs font-semibold ${
-              SEVERITY_PILL[group.highestSeverity] || SEVERITY_PILL.low
-            }`}
-          >
-            {group.highestSeverity.toUpperCase()}
-          </span>
-          <svg
-            className={`w-5 h-5 text-gray-400 transition-transform duration-300 ${
-              expanded ? "rotate-180" : ""
-            }`}
-            fill="none"
-            viewBox="0 0 24 24"
-            stroke="currentColor"
-          >
-            <path
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              strokeWidth={2}
-              d="M19 9l-7 7-7-7"
-            />
-          </svg>
+          <div className="flex justify-center w-full">
+            <span
+              className={`inline-flex justify-center px-3 py-1 rounded-full text-xs font-semibold whitespace-nowrap ${
+                SEVERITY_PILL[group.highestSeverity] || SEVERITY_PILL.low
+              }`}
+            >
+              {group.highestSeverity.toUpperCase()}
+            </span>
+          </div>
+          <div className="flex justify-center">
+            <svg
+              className={`w-5 h-5 text-gray-400 transition-transform duration-300 shrink-0 ${
+                expanded ? "rotate-180" : ""
+              }`}
+              fill="none"
+              viewBox="0 0 24 24"
+              stroke="currentColor"
+            >
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                strokeWidth={2}
+                d="M19 9l-7 7-7-7"
+              />
+            </svg>
+          </div>
         </div>
       </button>
 
@@ -199,7 +213,11 @@ function OffenseCard({ group }: { group: OffenseGroup }) {
             <p className="font-semibold text-gray-700 mb-1.5 flex items-center gap-1.5">
               <span className="text-base">💡</span> Infraction recorded:
             </p>
-            <p className="italic leading-relaxed">{group.findings[0]?.reasoning}</p>
+            <p className="italic leading-relaxed">
+              {group.findings[0]?.reasoning
+                ? normalizeObservationGrammar(group.findings[0].reasoning)
+                : null}
+            </p>
             {group.findings[0]?.training_recommendation && (
               <div className="mt-3 p-3 bg-white/70 rounded-lg border border-blue-100">
                 <span className="font-semibold text-blue-700">Mitigation: </span>
@@ -226,15 +244,15 @@ export default function Roster() {
   // Employee filters
   const [selectedRole, setSelectedRole] = useState<string>("all");
   const [sortField, setSortField] = useState<SortField>("name");
-  const [sortDir, setSortDir] = useState<SortDir>("asc");
 
-  // Offense filters
+  // Infraction-type filters (by finding_class)
   const [offenseClassFilter, setOffenseClassFilter] = useState<OffenseClassFilter>("all");
 
   const [addOpen, setAddOpen] = useState(false);
   const [addForm, setAddForm] = useState({
     id: "",
     name: "",
+    email: "",
     role: "",
     station: "",
     start_date: "",
@@ -261,7 +279,7 @@ export default function Roster() {
   }, []);
 
   const openAddModal = () => {
-    setAddForm({ id: "", name: "", role: "", station: "", start_date: "" });
+    setAddForm({ id: "", name: "", email: "", role: "", station: "", start_date: "" });
     setAddError(null);
     setAddOpen(true);
   };
@@ -291,7 +309,7 @@ export default function Roster() {
     return Array.from(roleSet).sort();
   }, [employees]);
 
-  // Available offense classes
+  // Available infraction classes
   const offenseClasses = useMemo(() => {
     const set = new Set(findings.map((f) => f.finding_class));
     return Array.from(set).sort();
@@ -308,18 +326,21 @@ export default function Roster() {
       let cmp = 0;
       if (sortField === "name") {
         cmp = a.name.localeCompare(b.name);
-      } else if (sortField === "findings") {
-        cmp = a.total_findings - b.total_findings;
-      } else if (sortField === "severity") {
-        cmp = (SEV_ORDER[a.highest_severity] || 0) - (SEV_ORDER[b.highest_severity] || 0);
+        return cmp;
       }
-      return sortDir === "asc" ? cmp : -cmp;
+      if (sortField === "findings") {
+        cmp = a.total_findings - b.total_findings;
+        return -cmp;
+      }
+      cmp =
+        (SEV_ORDER[a.highest_severity] || 0) - (SEV_ORDER[b.highest_severity] || 0);
+      return -cmp;
     });
 
     return filtered;
-  }, [employees, selectedRole, sortField, sortDir]);
+  }, [employees, selectedRole, sortField]);
 
-  // Grouped offenses with class filter
+  // Grouped infractions with class filter
   const offenseGroups = useMemo(() => {
     const relevantFindings =
       offenseClassFilter === "all"
@@ -394,7 +415,7 @@ export default function Roster() {
           color="bg-blue-50 text-blue-700 border-blue-200"
         />
         <StatCard
-          label="Total Findings"
+          label="Total Infractions"
           value={stats.totalFindings}
           icon="📋"
           color="bg-violet-50 text-violet-700 border-violet-200"
@@ -417,7 +438,7 @@ export default function Roster() {
       <div className="flex items-center justify-between mb-6">
         <h1 className="text-2xl font-bold text-gray-900">
           {viewMode === "employees" && "Employee Roster"}
-          {viewMode === "offenses" && "Offenses"}
+          {viewMode === "offenses" && "Infractions"}
           {viewMode === "positions" && "By Position"}
         </h1>
       </div>
@@ -428,7 +449,7 @@ export default function Roster() {
           {(
             [
               ["employees", "By Employee", "👤"],
-              ["offenses", "By Offense", "🚨"],
+              ["offenses", "By Infraction", "🚨"],
               ["positions", "By Position", "🏷️"],
             ] as [ViewMode, string, string][]
           ).map(([mode, label, icon]) => (
@@ -456,7 +477,7 @@ export default function Roster() {
               <select
                 value={selectedRole}
                 onChange={(e) => setSelectedRole(e.target.value)}
-                className="text-sm border border-gray-200 rounded-lg px-3 py-2 bg-white focus:outline-none focus:ring-2 focus:ring-blue-400 transition-shadow"
+                className={ROSTER_SELECT_CLASS}
               >
                 <option value="all">All Roles</option>
                 {roles.map((r) => (
@@ -470,31 +491,12 @@ export default function Roster() {
             <select
               value={sortField}
               onChange={(e) => setSortField(e.target.value as SortField)}
-              className="text-sm border border-gray-200 rounded-lg px-3 py-2 bg-white focus:outline-none focus:ring-2 focus:ring-blue-400 transition-shadow"
+              className={ROSTER_SELECT_CLASS}
             >
               <option value="name">Sort: Name</option>
-              <option value="findings">Sort: Findings</option>
+              <option value="findings">Sort: Infractions</option>
               <option value="severity">Sort: Severity</option>
             </select>
-
-            <button
-              onClick={() => setSortDir((d) => (d === "asc" ? "desc" : "asc"))}
-              className="flex items-center gap-1 px-3 py-2 text-sm border border-gray-200 rounded-lg bg-white hover:bg-gray-50 cursor-pointer transition-colors"
-              title={sortDir === "asc" ? "Ascending" : "Descending"}
-            >
-              <svg
-                className={`w-4 h-4 text-gray-600 transition-transform duration-200 ${
-                  sortDir === "desc" ? "rotate-180" : ""
-                }`}
-                fill="none"
-                viewBox="0 0 24 24"
-                stroke="currentColor"
-                strokeWidth={2}
-              >
-                <path strokeLinecap="round" strokeLinejoin="round" d="M5 15l7-7 7 7" />
-              </svg>
-              <span className="text-gray-600">{sortDir === "asc" ? "Ascending" : "Descending"}</span>
-            </button>
 
             <button
               type="button"
@@ -513,7 +515,7 @@ export default function Roster() {
             <select
               value={offenseClassFilter}
               onChange={(e) => setOffenseClassFilter(e.target.value as OffenseClassFilter)}
-              className="text-sm border border-gray-200 rounded-lg px-3 py-2 bg-white focus:outline-none focus:ring-2 focus:ring-blue-400 transition-shadow"
+              className={ROSTER_SELECT_CLASS}
             >
               <option value="all">All Types</option>
               {offenseClasses.map((cls) => (
@@ -558,34 +560,49 @@ export default function Roster() {
                   </div>
                 </div>
 
-                <div className="flex items-center text-sm shrink-0">
-                  <div className="w-20 text-center">
-                    <p className="text-xs text-gray-400 uppercase tracking-wide">Findings</p>
-                    <p className={`text-lg font-bold ${emp.total_findings > 0 ? "text-gray-900" : "text-gray-300"}`}>
+                <div className="flex items-center text-sm shrink-0 gap-1 sm:gap-0">
+                  <div className="w-[7.25rem] sm:w-28 text-center flex flex-col items-center">
+                    <div className="min-h-[2.25rem] w-full flex items-end justify-center px-0.5">
+                      <p className="text-[10px] sm:text-xs text-gray-400 uppercase tracking-wide leading-[1.15] text-center">
+                        <span className="block">Total</span>
+                        <span className="block">infractions</span>
+                      </p>
+                    </div>
+                    <p
+                      className={`text-lg font-bold tabular-nums ${emp.total_findings > 0 ? "text-gray-900" : "text-gray-300"}`}
+                    >
                       {emp.total_findings}
                     </p>
                   </div>
-                  <div className="w-20 text-center">
-                    <p className="text-xs text-gray-400 uppercase tracking-wide">Reports</p>
-                    <p className={`text-lg font-bold ${emp.total_reports > 0 ? "text-gray-900" : "text-gray-300"}`}>
+                  <div className="w-[7.25rem] sm:w-28 text-center flex flex-col items-center">
+                    <div className="min-h-[2.25rem] w-full flex items-end justify-center px-0.5">
+                      <p className="text-[10px] sm:text-xs text-gray-400 uppercase tracking-wide leading-[1.15] text-center">
+                        <span className="block">Total</span>
+                        <span className="block">reports</span>
+                      </p>
+                    </div>
+                    <p
+                      className={`text-lg font-bold tabular-nums ${emp.total_reports > 0 ? "text-gray-900" : "text-gray-300"}`}
+                    >
                       {emp.total_reports}
                     </p>
                   </div>
-                  <div className="w-20 text-center">
-                    {emp.total_findings > 0 ? (
-                      <span
-                        className={`px-3 py-1 rounded-full text-xs font-semibold ${
-                          SEVERITY_PILL[emp.highest_severity] ||
-                          SEVERITY_PILL.low
-                        }`}
-                      >
-                        {emp.highest_severity.toUpperCase()}
-                      </span>
-                    ) : (
-                      <span />
-                    )}
+                  <div className="w-[4.5rem] sm:w-20 flex flex-col items-center shrink-0">
+                    <div className="min-h-[2.25rem] w-full" aria-hidden />
+                    <div className="min-h-[1.75rem] flex items-center justify-center w-full">
+                      {emp.total_findings > 0 ? (
+                        <span
+                          className={`px-3 py-1 rounded-full text-xs font-semibold ${
+                            SEVERITY_PILL[emp.highest_severity] ||
+                            SEVERITY_PILL.low
+                          }`}
+                        >
+                          {emp.highest_severity.toUpperCase()}
+                        </span>
+                      ) : null}
+                    </div>
                   </div>
-                  <svg className="w-5 h-5 text-gray-300 ml-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <svg className="w-5 h-5 text-gray-300 ml-2 self-center" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
                   </svg>
                 </div>
@@ -625,7 +642,7 @@ export default function Roster() {
         </div>
       )}
 
-      {/* ─── BY OFFENSE view ──────────────────────────── */}
+      {/* ─── BY INFRACTION view ───────────────────────── */}
       {viewMode === "offenses" && (
         <div className="grid gap-3">
           {offenseGroups.map((group) => (
@@ -634,7 +651,7 @@ export default function Roster() {
 
           {offenseGroups.length === 0 && (
             <div className="text-center py-12">
-              <p className="text-gray-400 text-lg">No offenses match the selected type.</p>
+              <p className="text-gray-400 text-lg">No infractions match the selected type.</p>
               <button
                 onClick={() => setOffenseClassFilter("all")}
                 className="mt-3 text-sm text-blue-600 hover:underline cursor-pointer"
@@ -684,24 +701,39 @@ export default function Roster() {
                           </p>
                         </div>
                       </div>
-                      <div className="flex items-center gap-4 text-sm shrink-0">
-                        <div className="text-center">
-                          <p className="text-xs text-gray-400 uppercase tracking-wide">
-                            Findings
+                      <div className="flex items-center gap-3 text-sm shrink-0">
+                        <div className="w-[7.25rem] sm:w-28 text-center flex flex-col items-center">
+                          <div className="min-h-[2.25rem] w-full flex items-end justify-center px-0.5">
+                            <p className="text-[10px] sm:text-xs text-gray-400 uppercase tracking-wide leading-[1.15] text-center">
+                              <span className="block">Total</span>
+                              <span className="block">infractions</span>
+                            </p>
+                          </div>
+                          <p className="font-bold tabular-nums min-h-[1.75rem] flex items-center justify-center">
+                            {emp.total_findings}
                           </p>
-                          <p className="font-bold">{emp.total_findings}</p>
                         </div>
-                        {emp.total_findings > 0 && (
-                          <span
-                            className={`px-2.5 py-1 rounded-full text-xs font-semibold ${
-                              SEVERITY_PILL[emp.highest_severity] ||
-                              SEVERITY_PILL.low
-                            }`}
-                          >
-                            {emp.highest_severity.toUpperCase()}
-                          </span>
-                        )}
-                        <svg className="w-4 h-4 text-gray-300" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <div className="w-[4.5rem] sm:w-20 flex flex-col items-center shrink-0">
+                          <div className="min-h-[2.25rem] w-full" aria-hidden />
+                          <div className="min-h-[1.75rem] flex items-center justify-center w-full">
+                            {emp.total_findings > 0 ? (
+                              <span
+                                className={`px-2.5 py-1 rounded-full text-xs font-semibold ${
+                                  SEVERITY_PILL[emp.highest_severity] ||
+                                  SEVERITY_PILL.low
+                                }`}
+                              >
+                                {emp.highest_severity.toUpperCase()}
+                              </span>
+                            ) : null}
+                          </div>
+                        </div>
+                        <svg
+                          className="w-4 h-4 text-gray-300 self-center shrink-0"
+                          fill="none"
+                          viewBox="0 0 24 24"
+                          stroke="currentColor"
+                        >
                           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
                         </svg>
                       </div>
@@ -769,6 +801,21 @@ export default function Roster() {
                   placeholder="Full name"
                   className="w-full text-sm border border-gray-200 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-400"
                   autoComplete="name"
+                  disabled={addSaving}
+                />
+              </div>
+              <div>
+                <label htmlFor="emp-email" className="block text-xs font-medium text-gray-500 mb-1">
+                  Email
+                </label>
+                <input
+                  id="emp-email"
+                  type="email"
+                  value={addForm.email}
+                  onChange={(e) => setAddForm((f) => ({ ...f, email: e.target.value }))}
+                  placeholder="name@example.com"
+                  className="w-full text-sm border border-gray-200 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-400"
+                  autoComplete="email"
                   disabled={addSaving}
                 />
               </div>

@@ -76,7 +76,7 @@ export default function Settings() {
           Google Integration
         </h2>
         <p className="text-sm text-gray-500 mb-4">
-          Connect your Google account to automatically log findings to a Google
+          Connect your Google account to automatically log infractions to a Google
           Sheet.
         </p>
 
@@ -107,7 +107,7 @@ export default function Settings() {
             {google.sheet_url ? (
               <div className="bg-gray-50 rounded-lg p-4 mb-4">
                 <p className="text-sm font-medium text-gray-700 mb-1">
-                  SafeWatch Findings Sheet
+                  Vigilens Infractions Sheet
                 </p>
                 <a
                   href={google.sheet_url}
@@ -132,7 +132,7 @@ export default function Settings() {
               >
                 {google.sheet_url
                   ? "Create New Sheet"
-                  : "Create Findings Sheet"}
+                  : "Create Infractions Sheet"}
               </button>
               <button
                 onClick={handleConnect}

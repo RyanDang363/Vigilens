@@ -1,5 +1,5 @@
 """
-Browser actions for the SafeWatch browser agent.
+Browser actions for the Vigilens browser agent.
 
 - send_report_email: Browser Use agentmail to send report emails.
 - log_to_sheets: Google Sheets API via the backend (no browser).
@@ -45,7 +45,7 @@ def _format_email_body(request: BrowserActionRequest) -> str:
         lines.append("")
 
     lines.append("---\n")
-    lines.append("*This report was generated automatically by SafeWatch.*")
+    lines.append("*This report was generated automatically by Vigilens.*")
     return "\n".join(lines)
 
 

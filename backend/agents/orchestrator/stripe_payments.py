@@ -1,5 +1,5 @@
 """
-Stripe Embedded Checkout for SafeWatch.
+Stripe Embedded Checkout for Vigilens.
 
 Creates checkout sessions for analysis report payments
 and verifies payment completion.
@@ -38,7 +38,7 @@ def create_checkout_session(
     chat_session_id: str,
     description: str,
 ) -> dict:
-    """Create an embedded Stripe Checkout session for a SafeWatch report."""
+    """Create an embedded Stripe Checkout session for a Vigilens report."""
     stripe = _get_stripe()
 
     return_url = (

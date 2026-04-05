@@ -1,7 +1,27 @@
 """Pydantic schemas for API request/response serialization."""
 
-from pydantic import BaseModel
-from datetime import datetime
+from datetime import datetime, timezone
+from typing import Annotated
+
+from pydantic import BaseModel, PlainSerializer
+
+
+def _serialize_utc_datetime(value: datetime | None) -> str | None:
+    """Emit UTC ISO-8601 with Z so clients (e.g. JavaScript Date) parse as UTC, not local wall time."""
+    if value is None:
+        return None
+    if value.tzinfo is None:
+        u = value.replace(tzinfo=timezone.utc)
+    else:
+        u = value.astimezone(timezone.utc)
+    return u.isoformat().replace("+00:00", "Z")
+
+
+# Naive DB datetimes are stored as UTC (SQLite CURRENT_TIMESTAMP). JSON must include Z.
+UtcDateTime = Annotated[
+    datetime | None,
+    PlainSerializer(_serialize_utc_datetime, when_used="json"),
+]
 
 
 # --- Findings ---
@@ -52,7 +72,7 @@ class ActionLogOut(BaseModel):
     success: bool
     full_output: str = ""
     recording_url: str | None = ""
-    created_at: datetime | None = None
+    created_at: UtcDateTime = None
 
     class Config:
         from_attributes = True
@@ -64,7 +84,7 @@ class ReportOut(BaseModel):
     clip_id: str
     session_id: str
     jurisdiction: str
-    created_at: datetime | None
+    created_at: UtcDateTime
     code_backed_count: int
     guidance_count: int
     efficiency_count: int
@@ -79,7 +99,7 @@ class ReportOut(BaseModel):
 class ReportSummary(BaseModel):
     id: str
     clip_id: str
-    created_at: datetime | None
+    created_at: UtcDateTime
     highest_severity: str
     code_backed_count: int
     guidance_count: int
@@ -95,6 +115,7 @@ class ReportSummary(BaseModel):
 class EmployeeCreate(BaseModel):
     id: str
     name: str
+    email: str = ""
     role: str = ""
     station: str = ""
     start_date: str = ""
@@ -103,6 +124,7 @@ class EmployeeCreate(BaseModel):
 class EmployeeOut(BaseModel):
     id: str
     name: str
+    email: str = ""
     role: str
     station: str
     start_date: str
@@ -129,9 +151,9 @@ class TrainingSourceBase(BaseModel):
     version: int
     status: str
     active_version: bool
-    created_at: datetime | None
-    updated_at: datetime | None
-    last_indexed_at: datetime | None = None
+    created_at: UtcDateTime
+    updated_at: UtcDateTime
+    last_indexed_at: UtcDateTime = None
     google_file_id: str = ""
     source_url: str = ""
 
@@ -151,8 +173,8 @@ class TrainingSourceSummary(BaseModel):
     version: int
     status: str
     active_version: bool
-    created_at: datetime | None
-    last_indexed_at: datetime | None = None
+    created_at: UtcDateTime
+    last_indexed_at: UtcDateTime = None
 
 
 class TrainingUploadResponse(BaseModel):

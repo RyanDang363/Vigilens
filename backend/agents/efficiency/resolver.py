@@ -32,7 +32,7 @@ POLICY_DB: dict[str, dict] = {
             ),
         },
         "reasoning_template": (
-            "Observations {obs_types} suggest attention shifted away from active work "
+            "{observation_label} {obs_types} suggest attention shifted away from active work "
             "for a sustained period."
         ),
         "assumptions": [],
@@ -49,7 +49,7 @@ POLICY_DB: dict[str, dict] = {
             ),
         },
         "reasoning_template": (
-            "Observations {obs_types} suggest conversation paused task flow longer "
+            "{observation_label} {obs_types} suggest conversation paused task flow longer "
             "than a normal work check-in."
         ),
         "assumptions": ["conversation content could not be verified from video alone"],
@@ -66,7 +66,7 @@ POLICY_DB: dict[str, dict] = {
             ),
         },
         "reasoning_template": (
-            "Observations {obs_types} suggest sustained idle time at the station "
+            "{observation_label} {obs_types} suggest sustained idle time at the station "
             "while the task remained unfinished."
         ),
         "assumptions": ["no hidden dependency blocked the worker during the pause"],
@@ -83,7 +83,7 @@ POLICY_DB: dict[str, dict] = {
             ),
         },
         "reasoning_template": (
-            "Observations {obs_types} suggest task pace was slower than expected "
+            "{observation_label} {obs_types} suggest task pace was slower than expected "
             "for a meaningful span."
         ),
         "assumptions": ["worker was trained on the task being observed"],
@@ -100,7 +100,7 @@ POLICY_DB: dict[str, dict] = {
             ),
         },
         "reasoning_template": (
-            "Observations {obs_types} suggest the task was paused long enough to "
+            "{observation_label} {obs_types} suggest the task was paused long enough to "
             "materially interrupt workflow."
         ),
         "assumptions": ["the interruption was not required by a manager or customer need"],
@@ -117,7 +117,7 @@ POLICY_DB: dict[str, dict] = {
             ),
         },
         "reasoning_template": (
-            "Observations {obs_types} suggest avoidable movement added time without "
+            "{observation_label} {obs_types} suggest avoidable movement added time without "
             "advancing the task."
         ),
         "assumptions": ["needed tools or ingredients were expected to be nearby"],
@@ -134,7 +134,7 @@ POLICY_DB: dict[str, dict] = {
             ),
         },
         "reasoning_template": (
-            "Observations {obs_types} suggest attention shifted to non-work activity "
+            "{observation_label} {obs_types} suggest attention shifted to non-work activity "
             "during active prep time."
         ),
         "assumptions": [],
@@ -151,7 +151,7 @@ UNKNOWN_POLICY: dict = {
         "short_rule": "Observation did not match a known efficiency pattern.",
     },
     "reasoning_template": (
-        "Observations {obs_types} did not match a known efficiency pattern."
+        "{observation_label} {obs_types} did not match a known efficiency pattern."
     ),
     "assumptions": ["manual review recommended"],
 }

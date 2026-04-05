@@ -9,16 +9,17 @@ import {
   type Report,
   type GoogleStatus,
 } from "../lib/api";
+import { normalizeObservationGrammar } from "../lib/reasoning";
 
 const SEVERITY_COLORS: Record<string, string> = {
-  low: "bg-gray-100 text-gray-700 border-gray-200",
+  low: "bg-emerald-50 text-emerald-900 border-emerald-200",
   medium: "bg-yellow-50 text-yellow-900 border-yellow-200",
   high: "bg-orange-50 text-orange-900 border-orange-200",
   critical: "bg-red-50 text-red-900 border-red-200",
 };
 
 const SEVERITY_BADGE: Record<string, string> = {
-  low: "bg-gray-100 text-gray-700",
+  low: "bg-emerald-100 text-emerald-800",
   medium: "bg-yellow-100 text-yellow-800",
   high: "bg-orange-100 text-orange-800",
   critical: "bg-red-100 text-red-800",
@@ -61,7 +62,7 @@ const ACTION_HEADER_STYLE: Record<string, string> = {
 
 const ACTION_DESCRIPTIONS: Record<string, string> = {
   send_email: "Sent safety report to employee via email",
-  log_sheet: "Logged findings to connected Google Sheet",
+  log_sheet: "Logged infractions to connected Google Sheet",
   get_training_docs: "Searched uploaded training materials for relevant content",
   research_violations: "Researched FDA, OSHA, and CDC regulations with training videos",
 };
@@ -110,10 +111,10 @@ export default function ReportDetail() {
     try {
       const result = await logFindingsToSheet(report.id);
       setSheetMsg(
-        `${result.rows_appended} findings logged to Google Sheet.`
+        `${result.rows_appended} infractions logged to Google Sheet.`
       );
     } catch {
-      setSheetMsg("Failed to log findings to sheet.");
+      setSheetMsg("Failed to log infractions to sheet.");
     } finally {
       setSheetLoading(false);
     }
@@ -144,14 +145,14 @@ export default function ReportDetail() {
                 ` — ${new Date(report.created_at).toLocaleString()}`}
             </p>
           </div>
-          <div className="flex items-center gap-4 text-sm">
+          <div className="flex flex-wrap items-center gap-2 text-sm">
             <span
-              className={`px-2.5 py-1 rounded-full text-xs font-medium ${SEVERITY_BADGE[report.highest_severity]}`}
+              className={`inline-flex items-center rounded-full border border-gray-200/90 px-3 py-1.5 text-sm font-semibold shadow-sm ${SEVERITY_BADGE[report.highest_severity]}`}
             >
               Highest: {report.highest_severity.toUpperCase()}
             </span>
-            <span className="text-gray-500">
-              {report.findings.length} finding
+            <span className="inline-flex items-center rounded-full border border-gray-200/90 bg-gray-50 px-3 py-1.5 text-sm font-semibold text-gray-900 tabular-nums shadow-sm">
+              {report.findings.length} infraction
               {report.findings.length !== 1 && "s"}
             </span>
           </div>
@@ -190,7 +191,7 @@ export default function ReportDetail() {
               to="/settings"
               className="px-4 py-2 text-sm font-medium rounded-lg border border-gray-200 text-gray-600 hover:bg-gray-50 transition-colors"
             >
-              Connect Google to log findings
+              Connect Google to log infractions
             </Link>
           )}
           {google?.sheet_url && (
@@ -209,8 +210,8 @@ export default function ReportDetail() {
         )}
       </div>
 
-      {/* Findings */}
-      <h2 className="text-lg font-semibold mt-8 mb-4">Findings</h2>
+      {/* Infractions */}
+      <h2 className="text-lg font-semibold mt-8 mb-4">Infractions</h2>
 
       <div className="grid gap-4">
         {report.findings.map((f) => (
@@ -247,7 +248,7 @@ export default function ReportDetail() {
               <span className="font-medium text-gray-800">
                 Infraction recorded:{" "}
               </span>
-              <span>{f.reasoning}</span>
+              <span>{normalizeObservationGrammar(f.reasoning)}</span>
             </div>
 
             {/* Policy citation */}
@@ -284,7 +285,7 @@ export default function ReportDetail() {
         ))}
 
         {report.findings.length === 0 && (
-          <p className="text-gray-500">No findings in this report.</p>
+          <p className="text-gray-500">No infractions in this report.</p>
         )}
       </div>
 

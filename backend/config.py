@@ -9,7 +9,7 @@ _ENV_FILE = next((p for p in _ENV_CANDIDATES if p.is_file()), ".env")
 
 
 class Settings(BaseSettings):
-    app_name: str = "Workspace Safety Monitor"
+    app_name: str = "Vigilens"
     database_url: str = "sqlite+aiosqlite:///./app.db"
     twelvelabs_api_key: str = ""
     secret_key: str = "change-me-in-production"

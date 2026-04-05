@@ -29,6 +29,7 @@ from backend.agents.efficiency.severity import (
     SEVERITY_LEVELS,
     assign_efficiency_severity,
 )
+from backend.agents.observation_reasoning import format_reasoning_from_template
 from backend.agents.models.config import EFFICIENCY_AGENT_SEED
 from backend.agents.models.messages import (
     EfficiencyEvalRequest,
@@ -68,7 +69,10 @@ def evaluate_events(event_candidates):
         )
         coaching = get_efficiency_coaching_text(concluded_type)
         reference = policy.get("reference", {})
-        reasoning = policy.get("reasoning_template", "").format(obs_types=obs_types)
+        reasoning = format_reasoning_from_template(
+            policy.get("reasoning_template", ""),
+            obs_types,
+        )
 
         findings.append(EfficiencyFinding(
             event_id=event.event_id,

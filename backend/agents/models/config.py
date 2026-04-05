@@ -27,5 +27,5 @@ STRIPE_SECRET_KEY = (os.getenv("STRIPE_SECRET_KEY") or "").strip()
 STRIPE_PUBLISHABLE_KEY = (os.getenv("STRIPE_PUBLISHABLE_KEY") or "").strip()
 STRIPE_AMOUNT_CENTS = int(os.getenv("STRIPE_AMOUNT_CENTS", "100"))  # $1.00
 STRIPE_CURRENCY = os.getenv("STRIPE_CURRENCY", "usd")
-STRIPE_PRODUCT_NAME = os.getenv("STRIPE_PRODUCT_NAME", "SafeWatch Analysis Report")
+STRIPE_PRODUCT_NAME = os.getenv("STRIPE_PRODUCT_NAME", "Vigilens Analysis Report")
 STRIPE_SUCCESS_URL = os.getenv("STRIPE_SUCCESS_URL", "https://agentverse.ai")
