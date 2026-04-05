@@ -49,27 +49,10 @@ async def send_test(ctx: Context):
                 observations=[
                     Observation(
                         observation_id="o1",
-                        observation_type="raw_food_contact",
+                        observation_type="cross_contamination",
                         timestamp_start="00:01:42",
-                        timestamp_end="00:01:45",
-                        confidence=0.90,
-                        description="Worker handled raw chicken",
-                    ),
-                    Observation(
-                        observation_id="o2",
-                        observation_type="rte_food_contact",
-                        timestamp_start="00:01:48",
                         timestamp_end="00:01:52",
-                        confidence=0.85,
-                        description="Worker touched lettuce prep area",
-                    ),
-                    Observation(
-                        observation_id="o3",
-                        observation_type="no_sanitation_between_tasks",
-                        timestamp_start="00:01:45",
-                        timestamp_end="00:01:48",
-                        confidence=0.88,
-                        description="No visible sanitation between tasks",
+                        description="Worker handled raw chicken then touched lettuce prep area without washing hands",
                     ),
                 ],
                 corrective_action_observed=False,
@@ -78,11 +61,10 @@ async def send_test(ctx: Context):
                 event_id="test_h2",
                 observations=[
                     Observation(
-                        observation_id="o4",
+                        observation_id="o2",
                         observation_type="knife_near_table_edge",
                         timestamp_start="00:04:10",
                         timestamp_end="00:04:15",
-                        confidence=0.82,
                         description="Knife placed at edge of prep table",
                     ),
                 ],
@@ -94,11 +76,10 @@ async def send_test(ctx: Context):
                 event_id="test_e1",
                 observations=[
                     Observation(
-                        observation_id="o5",
+                        observation_id="o3",
                         observation_type="phone_usage",
                         timestamp_start="00:02:00",
                         timestamp_end="00:02:25",
-                        confidence=0.91,
                         description="Worker texting on phone during prep",
                     ),
                 ],

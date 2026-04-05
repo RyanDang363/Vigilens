@@ -23,23 +23,16 @@ def _raise_one_level(severity: str) -> str:
 
 def assign_efficiency_severity(
     concluded_type: str,
-    status: str,
     duration_seconds: float,
     repeated_behavior_observed: bool,
 ) -> str:
-    """Assign severity using duration and repetition, with conservative caps."""
-    if status == "not_an_issue":
-        return "low"
-
+    """Assign severity using duration and repetition."""
     severity = DEFAULT_SEVERITY.get(concluded_type, "low")
 
-    if repeated_behavior_observed and status in {"possible_issue", "confirmed_issue"}:
+    if repeated_behavior_observed:
         severity = _raise_one_level(severity)
 
-    if duration_seconds >= 60 and status == "confirmed_issue":
+    if duration_seconds >= 60:
         severity = _raise_one_level(severity)
-
-    if status == "insufficient_evidence" and severity == "high":
-        return "medium"
 
     return severity

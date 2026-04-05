@@ -10,7 +10,6 @@ class Observation(Model):
     observation_type: str  # evidence-level label (see AGENTS.md for full list)
     timestamp_start: str  # "HH:MM:SS"
     timestamp_end: str
-    confidence: float = 0.85  # 0.0-1.0, defaults to 0.85 when not provided by vision pipeline
     description: str  # natural language from TwelveLabs
 
 
@@ -46,13 +45,11 @@ class PolicyReference(Model):
 class HealthFinding(Model):
     event_id: str
     concluded_type: str  # the Health Agent's conclusion (e.g. "cross_contamination")
-    status: str  # confirmed_violation | possible_violation | insufficient_evidence | cleared
     finding_class: str  # code_backed_food_safety | workplace_safety_rule | house_rule
     severity: str  # low | medium | high | critical
     corrective_action_observed: bool
     corrective_action_adequate: Optional[bool] = None
     policy_reference: PolicyReference
-    evidence_confidence: float
     assumptions: list[str]
     reasoning: str
     training_recommendation: str
@@ -95,12 +92,10 @@ class EfficiencyReference(Model):
 class EfficiencyFinding(Model):
     event_id: str
     concluded_type: str  # e.g. "phone_usage"
-    status: str  # confirmed_issue | possible_issue | insufficient_evidence | not_an_issue
     finding_class: str  # workflow_efficiency | focus_behavior | coaching_note
     severity: str  # low | medium | high
     duration_seconds: float
     repeated_behavior_observed: bool
-    evidence_confidence: float
     reference: EfficiencyReference
     assumptions: list[str]
     reasoning: str

@@ -1,5 +1,5 @@
 """
-Orchestrator Agent — the coordinator of the multi-agent pipeline.
+Orchestrator Agent -- the coordinator of the multi-agent pipeline.
 
 Flow:
 1. Receives an OrchestratorRequest (via chat or REST) with observations
@@ -74,7 +74,7 @@ def _max_severity(*severities: str) -> str:
 def _build_report_summary(state: PipelineState) -> str:
     total = len(state.health_findings) + len(state.efficiency_findings)
     lines = [
-        f"Report for {state.employee_name} — clip {state.clip_id}",
+        f"Report for {state.employee_name} -- clip {state.clip_id}",
         f"Jurisdiction: {state.jurisdiction}",
         f"Total findings: {total}",
         f"  Health (code-backed): {state.health_code_backed}",
@@ -94,7 +94,6 @@ async def _post_report_to_backend(state: PipelineState):
         pr = f.get("policy_reference", {})
         findings_payload.append({
             "concluded_type": f.get("concluded_type", ""),
-            "status": f.get("status", ""),
             "finding_class": f.get("finding_class", ""),
             "severity": f.get("severity", ""),
             "agent_source": "health",
@@ -102,7 +101,6 @@ async def _post_report_to_backend(state: PipelineState):
             "policy_section": pr.get("section", ""),
             "policy_short_rule": pr.get("short_rule", ""),
             "policy_url": pr.get("official_url", ""),
-            "evidence_confidence": f.get("evidence_confidence", 0.0),
             "reasoning": f.get("reasoning", ""),
             "training_recommendation": f.get("training_recommendation", ""),
             "corrective_action_observed": f.get("corrective_action_observed", False),
@@ -114,14 +112,12 @@ async def _post_report_to_backend(state: PipelineState):
         ref = f.get("reference", {})
         findings_payload.append({
             "concluded_type": f.get("concluded_type", ""),
-            "status": f.get("status", ""),
             "finding_class": f.get("finding_class", ""),
             "severity": f.get("severity", ""),
             "agent_source": "efficiency",
             "policy_code": ref.get("code", ""),
             "policy_section": ref.get("section", ""),
             "policy_short_rule": ref.get("short_rule", ""),
-            "evidence_confidence": f.get("evidence_confidence", 0.0),
             "reasoning": f.get("reasoning", ""),
             "training_recommendation": f.get("coaching_recommendation", ""),
             "timestamp_start": f.get("timestamp_start", ""),
@@ -173,7 +169,7 @@ async def _trigger_browser_actions(ctx: Context, state: PipelineState):
 async def _finalize_pipeline(ctx: Context, session_id: str):
     """Called when all agent responses are collected. Compiles report,
     posts to backend, triggers browser actions, responds to user."""
-    # Atomic take â€” only the first caller gets the state, all others get None
+    # Atomic take --??? only the first caller gets the state, all others get None
     state = state_service.take(session_id)
     if not state or not state.is_complete:
         return
@@ -223,7 +219,7 @@ async def on_startup(ctx: Context):
 
 
 # ---------------------------------------------------------------------------
-# Handle OrchestratorRequest — kick off the pipeline
+# Handle OrchestratorRequest -- kick off the pipeline
 # ---------------------------------------------------------------------------
 
 @orchestrator.on_message(OrchestratorRequest)
@@ -351,7 +347,7 @@ async def handle_browser_response(ctx: Context, sender: str, msg: BrowserActionR
 
 
 # ---------------------------------------------------------------------------
-# Chat protocol — allows triggering the pipeline from Agentverse chat
+# Chat protocol -- allows triggering the pipeline from Agentverse chat
 # with a demo using mock observations
 # ---------------------------------------------------------------------------
 
@@ -359,15 +355,9 @@ DEMO_HEALTH_EVENTS = [
     EventCandidate(
         event_id="demo_h1",
         observations=[
-            Observation(observation_id="o1", observation_type="raw_food_contact",
-                        timestamp_start="00:01:42", timestamp_end="00:01:45",
-                        confidence=0.90, description="Worker handled raw chicken"),
-            Observation(observation_id="o2", observation_type="rte_food_contact",
-                        timestamp_start="00:01:48", timestamp_end="00:01:52",
-                        confidence=0.85, description="Worker touched lettuce prep area"),
-            Observation(observation_id="o3", observation_type="no_sanitation_between_tasks",
-                        timestamp_start="00:01:45", timestamp_end="00:01:48",
-                        confidence=0.88, description="No visible sanitation between tasks"),
+            Observation(observation_id="o1", observation_type="cross_contamination",
+                        timestamp_start="00:01:42", timestamp_end="00:01:52",
+                        description="Worker handled raw chicken then touched lettuce prep area without washing hands"),
         ],
         corrective_action_observed=False,
     ),
@@ -379,7 +369,7 @@ DEMO_EFFICIENCY_EVENTS = [
         observations=[
             Observation(observation_id="o4", observation_type="phone_usage",
                         timestamp_start="00:03:00", timestamp_end="00:03:22",
-                        confidence=0.91, description="Worker texting during prep"),
+                        description="Worker texting during prep"),
         ],
     ),
 ]

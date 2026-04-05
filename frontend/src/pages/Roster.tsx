@@ -184,23 +184,6 @@ function OffenseCard({ group }: { group: OffenseGroup }) {
                 <span className="text-gray-400 text-xs font-mono">
                   {f.timestamp_start} – {f.timestamp_end}
                 </span>
-                <div className="flex items-center gap-1.5">
-                  <div className="w-12 h-1.5 rounded-full bg-gray-200 overflow-hidden">
-                    <div
-                      className={`h-full rounded-full ${
-                        f.evidence_confidence >= 0.8
-                          ? "bg-emerald-500"
-                          : f.evidence_confidence >= 0.6
-                          ? "bg-amber-500"
-                          : "bg-red-400"
-                      }`}
-                      style={{ width: `${f.evidence_confidence * 100}%` }}
-                    />
-                  </div>
-                  <span className="text-gray-400 text-xs">
-                    {(f.evidence_confidence * 100).toFixed(0)}%
-                  </span>
-                </div>
                 <span
                   className={`w-2 h-2 rounded-full ${
                     SEVERITY_DOT[f.severity] || SEVERITY_DOT.low

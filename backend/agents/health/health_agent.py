@@ -1,5 +1,5 @@
 """
-Health Agent — receives observation-based event candidates from the orchestrator,
+Health Agent -- receives observation-based event candidates from the orchestrator,
 adjudicates food safety and workplace safety findings, and returns structured
 results with policy citations and coaching recommendations.
 
@@ -34,7 +34,6 @@ from backend.agents.models.messages import (
     PolicyReference,
 )
 from backend.agents.health.policy_resolver import resolve_policy
-from backend.agents.health.adjudicator import adjudicate
 from backend.agents.health.severity import assign_severity, SEVERITY_LEVELS
 from backend.agents.health.coach import get_coaching_text
 
@@ -63,26 +62,19 @@ def evaluate_events(event_candidates, jurisdiction, strictness):
         if concluded_type is None:
             continue
 
-        status = adjudicate(event, policy, strictness)
         severity = assign_severity(
-            concluded_type, status, event.corrective_action_observed
+            concluded_type, event.corrective_action_observed
         )
         recommendation = get_coaching_text(
-            concluded_type, status, event.corrective_action_observed
+            concluded_type, event.corrective_action_observed
         )
 
-        avg_confidence = (
-            sum(obs.confidence for obs in event.observations) / len(event.observations)
-            if event.observations
-            else 0.0
-        )
         reasoning = policy.get("reasoning_template", "").format(obs_types=obs_types)
         ref = policy.get("reference", {})
 
         findings.append(HealthFinding(
             event_id=event.event_id,
             concluded_type=concluded_type,
-            status=status,
             finding_class=policy.get("finding_class", "house_rule"),
             severity=severity,
             corrective_action_observed=event.corrective_action_observed or False,
@@ -93,7 +85,6 @@ def evaluate_events(event_candidates, jurisdiction, strictness):
                 section=ref.get("section", ""),
                 short_rule=ref.get("short_rule", ""),
             ),
-            evidence_confidence=round(avg_confidence, 3),
             assumptions=policy.get("assumptions", []),
             reasoning=reasoning,
             training_recommendation=recommendation,
@@ -157,27 +148,10 @@ DEMO_EVENTS = [
         observations=[
             Observation(
                 observation_id="obs_1a",
-                observation_type="raw_food_contact",
+                observation_type="cross_contamination",
                 timestamp_start="00:01:42",
-                timestamp_end="00:01:45",
-                confidence=0.90,
-                description="Worker handled raw chicken",
-            ),
-            Observation(
-                observation_id="obs_1b",
-                observation_type="rte_food_contact",
-                timestamp_start="00:01:48",
                 timestamp_end="00:01:52",
-                confidence=0.85,
-                description="Worker touched lettuce prep area",
-            ),
-            Observation(
-                observation_id="obs_1c",
-                observation_type="no_sanitation_between_tasks",
-                timestamp_start="00:01:45",
-                timestamp_end="00:01:48",
-                confidence=0.88,
-                description="No visible hand wash or surface sanitation between tasks",
+                description="Worker handled raw chicken then touched lettuce prep area without washing hands or sanitizing surfaces",
             ),
         ],
         corrective_action_observed=False,
@@ -190,7 +164,6 @@ DEMO_EVENTS = [
                 observation_type="knife_near_table_edge",
                 timestamp_start="00:03:10",
                 timestamp_end="00:03:15",
-                confidence=0.82,
                 description="Knife placed at edge of prep table",
             ),
         ],
@@ -222,15 +195,13 @@ async def handle_chat(ctx: Context, sender: str, msg: ChatMessage):
     findings = evaluate_events(DEMO_EVENTS, jurisdiction="california", strictness="medium")
 
     # Format findings as readable text
-    lines = [f"Health Agent Demo — {len(findings)} finding(s):\n"]
+    lines = [f"Health Agent Demo -- {len(findings)} finding(s):\n"]
     for f in findings:
         lines.append(
             f"[{f.severity.upper()}] {f.concluded_type}\n"
-            f"  Status: {f.status}\n"
             f"  Class: {f.finding_class}\n"
             f"  Policy: {f.policy_reference.code} {f.policy_reference.section}\n"
             f"  Rule: {f.policy_reference.short_rule}\n"
-            f"  Confidence: {f.evidence_confidence}\n"
             f"  Coaching: {f.training_recommendation}\n"
             f"  Time: {f.timestamp_start} - {f.timestamp_end}\n"
         )
