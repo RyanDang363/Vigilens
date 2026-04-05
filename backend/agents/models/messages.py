@@ -119,3 +119,55 @@ class EfficiencyEvalResponse(Model):
     confirmed_issue_count: int
     coaching_opportunity_count: int
     highest_severity: str
+
+
+# ---------------------------------------------------------------------------
+# Browser Agent models
+# ---------------------------------------------------------------------------
+
+class BrowserActionRequest(Model):
+    """Sent by the orchestrator to the Browser Agent."""
+
+    chat_session_id: str
+    action_type: str  # "send_email" | "log_sheet" | "get_training_docs"
+    employee_name: str
+    employee_email: Optional[str] = None
+    manager_email: Optional[str] = None
+    report_summary: str  # formatted text summary of findings
+    findings_data: list[dict]  # raw finding dicts for sheet logging
+    sheet_url: Optional[str] = None  # Google Sheets URL
+    training_doc_url: Optional[str] = None
+
+
+class BrowserActionResponse(Model):
+    """Sent back to the orchestrator by the Browser Agent."""
+
+    chat_session_id: str
+    action_type: str
+    success: bool
+    message: str  # human-readable result or error
+    recording_url: Optional[str] = None  # MP4 of the browser session
+
+
+# ---------------------------------------------------------------------------
+# Orchestrator models
+# ---------------------------------------------------------------------------
+
+class OrchestratorRequest(Model):
+    """Trigger the orchestrator to evaluate a clip for an employee.
+    Typically sent via REST or chat, contains the raw observations from
+    the video pipeline."""
+
+    clip_id: str
+    employee_id: str
+    employee_name: str
+    employee_email: Optional[str] = None
+    manager_email: Optional[str] = None
+    station_id: Optional[str] = None
+    jurisdiction: str = "federal"
+    strictness: str = "medium"
+    health_events: list[EventCandidate] = []
+    efficiency_events: list[EventCandidate] = []
+    sheet_url: Optional[str] = None
+    training_doc_url: Optional[str] = None
+    actions: list[str] = []  # e.g. ["send_email", "log_sheet"]
