@@ -20,7 +20,7 @@ from uagents_core.contrib.protocols.chat import (
 )
 
 from backend.agents.efficiency.adjudicator import (
-    adjudicate_efficiency,
+    should_flag,
     calculate_duration_seconds,
 )
 from backend.agents.efficiency.coach import get_efficiency_coaching_text
@@ -55,33 +55,28 @@ def evaluate_events(event_candidates, strictness):
     for event in event_candidates:
         obs_types = [obs.observation_type for obs in event.observations]
         concluded_type, policy = resolve_efficiency_policy(obs_types)
-        status = adjudicate_efficiency(event, concluded_type, strictness)
+
+        if not should_flag(event, concluded_type):
+            continue
+
         duration_seconds = round(calculate_duration_seconds(event), 2)
         repeated_behavior_observed = len(event.observations) > 1
         severity = assign_efficiency_severity(
             concluded_type,
-            status,
             duration_seconds,
             repeated_behavior_observed,
         )
-        coaching = get_efficiency_coaching_text(concluded_type, status)
-        avg_confidence = (
-            sum(obs.confidence for obs in event.observations) / len(event.observations)
-            if event.observations
-            else 0.0
-        )
+        coaching = get_efficiency_coaching_text(concluded_type)
         reference = policy.get("reference", {})
         reasoning = policy.get("reasoning_template", "").format(obs_types=obs_types)
 
         findings.append(EfficiencyFinding(
             event_id=event.event_id,
             concluded_type=concluded_type,
-            status=status,
             finding_class=policy.get("finding_class", "coaching_note"),
             severity=severity,
             duration_seconds=duration_seconds,
             repeated_behavior_observed=repeated_behavior_observed,
-            evidence_confidence=round(avg_confidence, 3),
             reference=EfficiencyReference(
                 source_tier=reference.get("source_tier", "house_rule"),
                 code=reference.get("code", "Internal Workflow Coaching Guide"),
@@ -114,10 +109,8 @@ async def handle_eval(ctx: Context, sender: str, msg: EfficiencyEvalRequest):
     )
 
     findings = evaluate_events(msg.event_candidates, msg.strictness)
-    confirmed_issue_count = sum(1 for finding in findings if finding.status == "confirmed_issue")
-    coaching_opportunity_count = sum(
-        1 for finding in findings if finding.status in {"confirmed_issue", "possible_issue"}
-    )
+    confirmed_issue_count = len(findings)
+    coaching_opportunity_count = len(findings)
     highest_severity = max(
         (finding.severity for finding in findings),
         key=lambda value: SEVERITY_LEVELS.index(value),
@@ -150,7 +143,6 @@ DEMO_EVENTS = [
                 observation_type="phone_usage",
                 timestamp_start="00:00:10",
                 timestamp_end="00:00:32",
-                confidence=0.91,
                 description="Worker appears to text on phone while prep is paused.",
             )
         ],
@@ -163,7 +155,6 @@ DEMO_EVENTS = [
                 observation_type="extended_chatting",
                 timestamp_start="00:01:00",
                 timestamp_end="00:01:18",
-                confidence=0.73,
                 description="Two workers talk while station work is paused.",
             ),
             Observation(
@@ -171,7 +162,6 @@ DEMO_EVENTS = [
                 observation_type="extended_chatting",
                 timestamp_start="00:01:24",
                 timestamp_end="00:01:40",
-                confidence=0.71,
                 description="Conversation continues before prep resumes.",
             ),
         ],
@@ -197,10 +187,8 @@ async def handle_chat(ctx: Context, sender: str, msg: ChatMessage):
     for finding in findings:
         lines.append(
             f"[{finding.severity.upper()}] {finding.concluded_type}\n"
-            f"  Status: {finding.status}\n"
             f"  Class: {finding.finding_class}\n"
             f"  Duration: {finding.duration_seconds}s\n"
-            f"  Confidence: {finding.evidence_confidence}\n"
             f"  Guidance: {finding.coaching_recommendation}\n"
             f"  Time: {finding.timestamp_start} - {finding.timestamp_end}\n"
         )
@@ -238,10 +226,8 @@ async def handle_rest_eval(ctx: Context, req: EfficiencyEvalRequest) -> Efficien
     )
 
     findings = evaluate_events(req.event_candidates, req.strictness)
-    confirmed_issue_count = sum(1 for f in findings if f.status == "confirmed_issue")
-    coaching_opportunity_count = sum(
-        1 for f in findings if f.status in {"confirmed_issue", "possible_issue"}
-    )
+    confirmed_issue_count = len(findings)
+    coaching_opportunity_count = len(findings)
     highest_severity = max(
         (f.severity for f in findings),
         key=lambda value: SEVERITY_LEVELS.index(value),
@@ -249,8 +235,7 @@ async def handle_rest_eval(ctx: Context, req: EfficiencyEvalRequest) -> Efficien
     )
 
     ctx.logger.info(
-        f"REST efficiency eval complete: {len(findings)} findings, "
-        f"confirmed={confirmed_issue_count}, highest={highest_severity}"
+        f"REST efficiency eval complete: {len(findings)} findings, highest={highest_severity}"
     )
 
     return EfficiencyEvalResponse(

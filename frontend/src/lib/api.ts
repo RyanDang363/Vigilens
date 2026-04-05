@@ -23,14 +23,12 @@ export interface Finding {
   report_id: string;
   agent_source: string;
   concluded_type: string;
-  status: string;
   finding_class: string;
   severity: string;
   policy_code: string;
   policy_section: string;
   policy_short_rule: string;
   policy_url: string;
-  evidence_confidence: number;
   reasoning: string;
   training_recommendation: string;
   corrective_action_observed: boolean;

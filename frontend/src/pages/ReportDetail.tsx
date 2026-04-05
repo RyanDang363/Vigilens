@@ -130,16 +130,12 @@ export default function ReportDetail() {
                   >
                     {f.severity.toUpperCase()}
                   </span>
-                  <span className="px-2 py-0.5 rounded text-xs bg-white/60 text-gray-600">
-                    {f.status.replace(/_/g, " ")}
-                  </span>
                 </div>
               </div>
               <div className="text-right text-xs text-gray-500">
                 <p>
                   {f.timestamp_start} — {f.timestamp_end}
                 </p>
-                <p>Confidence: {(f.evidence_confidence * 100).toFixed(0)}%</p>
               </div>
             </div>
 

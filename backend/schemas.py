@@ -8,7 +8,6 @@ from datetime import datetime
 
 class FindingCreate(BaseModel):
     concluded_type: str
-    status: str
     finding_class: str
     severity: str
     agent_source: str = "health"
@@ -16,7 +15,6 @@ class FindingCreate(BaseModel):
     policy_section: str = ""
     policy_short_rule: str = ""
     policy_url: str = ""
-    evidence_confidence: float = 0.0
     reasoning: str = ""
     training_recommendation: str = ""
     corrective_action_observed: bool = False
