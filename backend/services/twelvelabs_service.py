@@ -11,6 +11,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 from twelvelabs import TwelveLabs
+from twelvelabs.core.api_error import ApiError
 from twelvelabs.types import ResponseFormat, VideoContext_AssetId
 
 from backend.config import get_settings
@@ -165,6 +166,23 @@ def analyze_video(client: TwelveLabs, asset_id: str) -> tuple[str, list[Detectio
     return raw, detections
 
 
+def _explain_twelvelabs_api_error(e: ApiError) -> str:
+    code = e.status_code
+    body = e.body
+    base = f"TwelveLabs HTTP {code}"
+    if code == 403:
+        return (
+            f"{base} Forbidden: API key rejected or not allowed for this operation. "
+            "Check: (1) key is valid in the TwelveLabs dashboard; (2) no typo in backend/.env; "
+            "(3) your shell/IDE is not exporting TWELVELABS_API_KEY with a wrong or empty value "
+            "(that overrides .env). "
+            f"SDK detail: {e}"
+        )
+    if code == 401:
+        return f"{base} Unauthorized (invalid or missing x-api-key). SDK detail: {e}"
+    return f"{base}. SDK detail: {e}"
+
+
 def run_detection_pipeline(file_path: str) -> DetectionResult:
     """
     Full pipeline: upload video -> analyze with Pegasus -> return detections.
@@ -173,9 +191,13 @@ def run_detection_pipeline(file_path: str) -> DetectionResult:
     if not path.exists():
         raise FileNotFoundError(f"Video file not found: {file_path}")
 
-    client = _get_client()
-    asset_id = upload_asset(client, file_path)
-    raw_response, detections = analyze_video(client, asset_id)
+    try:
+        client = _get_client()
+        asset_id = upload_asset(client, file_path)
+        raw_response, detections = analyze_video(client, asset_id)
+    except ApiError as e:
+        logger.error("TwelveLabs API error: %s", e)
+        raise RuntimeError(_explain_twelvelabs_api_error(e)) from e
 
     logger.info("Detection pipeline complete: %d infractions found.", len(detections))
 

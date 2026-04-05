@@ -1,7 +1,17 @@
 import axios from "axios";
 
+function apiBaseUrl(): string {
+  if (typeof window !== "undefined") {
+    const { protocol, hostname } = window.location;
+    if (hostname === "127.0.0.1" || hostname === "localhost") {
+      return `${protocol}//${hostname}:8000`;
+    }
+  }
+  return "http://localhost:8000";
+}
+
 const api = axios.create({
-  baseURL: "http://localhost:8000",
+  baseURL: apiBaseUrl(),
   headers: {
     "X-Role": "manager",
   },
@@ -119,6 +129,38 @@ export async function fetchEmployee(id: string): Promise<Employee> {
   return data;
 }
 
+export interface EmployeeCreatePayload {
+  id: string;
+  name: string;
+  role?: string;
+  station?: string;
+  start_date?: string;
+}
+
+export async function createEmployee(
+  payload: EmployeeCreatePayload
+): Promise<Employee> {
+  const { data } = await api.post("/api/employees", {
+    id: payload.id.trim(),
+    name: payload.name.trim(),
+    role: payload.role?.trim() ?? "",
+    station: payload.station?.trim() ?? "",
+    start_date: payload.start_date?.trim() ?? "",
+  });
+  return data;
+}
+
+export async function deleteEmployee(employeeId: string): Promise<void> {
+  const id = employeeId.trim();
+  if (!id) {
+    throw new Error("Employee id is required to remove an employee.");
+  }
+  const enc = encodeURIComponent(id);
+  // POST avoids "405 Method Not Allowed" when DELETE hits /api/employees with a dropped id,
+  // and works on networks that block DELETE.
+  await api.post(`/api/employees/${enc}/delete`);
+}
+
 export async function fetchEmployeeReports(
   employeeId: string
 ): Promise<ReportSummary[]> {
@@ -197,5 +239,55 @@ export interface FindingWithEmployee extends Finding {
 
 export async function fetchAllFindings(): Promise<FindingWithEmployee[]> {
   const { data } = await api.get("/api/findings");
+  return data;
+}
+
+/** Response from POST /api/analyze (TwelveLabs + orchestrator pipeline). */
+export interface AnalyzeVideoResponse {
+  status: string;
+  asset_id: string;
+  total_detections: number;
+  health_events: number;
+  efficiency_events: number;
+  detections: Array<{
+    type: string;
+    timestamp_start: number;
+    timestamp_end: number;
+    description: string;
+  }>;
+  orchestrator: {
+    session_id?: string;
+    status?: string;
+    health_event_count?: number;
+    efficiency_event_count?: number;
+    health_findings?: number;
+    efficiency_findings?: number;
+    highest_severity?: string;
+    report_id?: string;
+  } | null;
+}
+
+/**
+ * Upload a station video for an employee. Runs TwelveLabs, then the health +
+ * efficiency agents via the orchestrator, and persists a report to the dashboard.
+ * Can take several minutes; uses an extended timeout.
+ */
+export async function analyzeEmployeeVideo(
+  employeeId: string,
+  file: File
+): Promise<AnalyzeVideoResponse> {
+  const formData = new FormData();
+  formData.append("video", file);
+  formData.append("employee_id", employeeId);
+
+  const { data } = await api.post<AnalyzeVideoResponse>(
+    "/api/analyze",
+    formData,
+    {
+      timeout: 600_000,
+      maxContentLength: Infinity,
+      maxBodyLength: Infinity,
+    }
+  );
   return data;
 }

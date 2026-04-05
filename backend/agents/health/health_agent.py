@@ -51,7 +51,7 @@ health_agent = Agent(
 # Core handler: structured HealthEvalRequest from orchestrator
 # ---------------------------------------------------------------------------
 
-def evaluate_events(event_candidates, jurisdiction, strictness):
+def evaluate_events(event_candidates, jurisdiction):
     """Run the health pipeline on a list of EventCandidates. Returns findings list."""
     findings: list[HealthFinding] = []
 
@@ -107,9 +107,7 @@ async def handle_eval(ctx: Context, sender: str, msg: HealthEvalRequest):
         f"jurisdiction={msg.jurisdiction} events={len(msg.event_candidates)}"
     )
 
-    findings = evaluate_events(
-        msg.event_candidates, msg.jurisdiction, msg.strictness
-    )
+    findings = evaluate_events(msg.event_candidates, msg.jurisdiction)
 
     code_backed = sum(1 for f in findings if f.finding_class == "code_backed_food_safety")
     guidance = sum(1 for f in findings if f.finding_class != "code_backed_food_safety")
@@ -192,7 +190,7 @@ async def handle_chat(ctx: Context, sender: str, msg: ChatMessage):
     ctx.logger.info(f"Chat message from {sender}: {user_text[:100]}")
 
     # Run demo evaluation
-    findings = evaluate_events(DEMO_EVENTS, jurisdiction="california", strictness="medium")
+    findings = evaluate_events(DEMO_EVENTS, jurisdiction="california")
 
     # Format findings as readable text
     lines = [f"Health Agent Demo -- {len(findings)} finding(s):\n"]
@@ -240,7 +238,7 @@ async def handle_rest_eval(ctx: Context, req: HealthEvalRequest) -> HealthEvalRe
         f"jurisdiction={req.jurisdiction} events={len(req.event_candidates)}"
     )
 
-    findings = evaluate_events(req.event_candidates, req.jurisdiction, req.strictness)
+    findings = evaluate_events(req.event_candidates, req.jurisdiction)
     code_backed = sum(1 for f in findings if f.finding_class == "code_backed_food_safety")
     guidance = sum(1 for f in findings if f.finding_class != "code_backed_food_safety")
     highest = max(

@@ -42,7 +42,6 @@ async def send_test(ctx: Context):
         employee_email="evanbnguyen@gmail.com",
         manager_email="",
         jurisdiction="california",
-        strictness="medium",
         health_events=[
             EventCandidate(
                 event_id="test_h1",
