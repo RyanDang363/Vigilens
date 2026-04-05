@@ -7,7 +7,9 @@ backend/.venv/
 .env
 backend/.env
 
-# Python
+# Backend
+backend/videos/
+backend/app.db
 __pycache__/
 *.py[cod]
 *.egg-info/
