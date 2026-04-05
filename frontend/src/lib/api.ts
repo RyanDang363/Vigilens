@@ -178,3 +178,13 @@ export function getApiErrorMessage(error: unknown): string {
 
   return "Something went wrong.";
 }
+export interface FindingWithEmployee extends Finding {
+  employee_name: string;
+  employee_id: string;
+  employee_role: string;
+}
+
+export async function fetchAllFindings(): Promise<FindingWithEmployee[]> {
+  const { data } = await api.get("/api/findings");
+  return data;
+}

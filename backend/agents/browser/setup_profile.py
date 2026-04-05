@@ -1,7 +1,8 @@
 """
-One-time setup script: creates a persistent Browser Use profile and opens
-a live browser so you can log into Google manually. After login, the profile
-saves cookies so all future browser agent runs skip authentication.
+One-time setup script: creates a persistent Browser Use profile, launches a
+real browser with a task so the live URL is active, and lets you log into
+Google. After login, the profile saves cookies so all future browser agent
+runs skip authentication.
 
 Usage:
     python -m backend.agents.browser.setup_profile
@@ -38,18 +39,20 @@ async def main():
     print(f"\nProfile created: {profile.id}")
     print(f"Save this as GOOGLE_PROFILE_ID in your .env file.\n")
 
-    # Start a session with the profile so we can log in
+    # Start a session WITH a task so the browser actually launches.
+    # Without a task, the browser stays idle and the live URL shows nothing.
     session = await client.sessions.create(
         profile_id=profile.id,
         keep_alive=True,
+        task="Go to https://accounts.google.com and wait.",
     )
 
     print(f"Live browser URL: {session.live_url}")
     print()
-    print("1. Open the URL above in your browser")
+    print("1. Open the URL above in your browser — you should see Google sign-in")
     print("2. Log into your Google account (Gmail, Sheets, etc.)")
     print("3. Complete any 2FA prompts")
-    print("4. Come back here and press Enter when done")
+    print("4. Once you see your Google account page, come back here and press Enter")
     print()
     input("Press Enter after you've logged in...")
 
