@@ -15,7 +15,7 @@ import json
 from datetime import datetime, timezone
 from uuid import uuid4
 
-from uagents import Agent, Context, Protocol
+from uagents import Agent, Context, Model, Protocol
 from uagents_core.contrib.protocols.chat import (
     ChatAcknowledgement,
     ChatMessage,
@@ -256,6 +256,43 @@ async def handle_ack(ctx: Context, sender: str, msg: ChatAcknowledgement):
 
 
 health_agent.include(chat_proto, publish_manifest=True)
+
+
+# ---------------------------------------------------------------------------
+# REST endpoint for direct HTTP evaluation (bypasses uagents message passing)
+# ---------------------------------------------------------------------------
+
+@health_agent.on_rest_post("/evaluate", HealthEvalRequest, HealthEvalResponse)
+async def handle_rest_eval(ctx: Context, req: HealthEvalRequest) -> HealthEvalResponse:
+    ctx.logger.info(
+        f"REST health eval for clip={req.clip_id} employee={req.employee_id} "
+        f"jurisdiction={req.jurisdiction} events={len(req.event_candidates)}"
+    )
+
+    findings = evaluate_events(req.event_candidates, req.jurisdiction, req.strictness)
+    code_backed = sum(1 for f in findings if f.finding_class == "code_backed_food_safety")
+    guidance = sum(1 for f in findings if f.finding_class != "code_backed_food_safety")
+    highest = max(
+        (f.severity for f in findings),
+        key=lambda s: SEVERITY_LEVELS.index(s),
+        default="low",
+    )
+
+    ctx.logger.info(
+        f"REST health eval complete: {len(findings)} findings, "
+        f"code_backed={code_backed}, guidance={guidance}, highest={highest}"
+    )
+
+    return HealthEvalResponse(
+        chat_session_id=req.chat_session_id,
+        clip_id=req.clip_id,
+        employee_id=req.employee_id,
+        jurisdiction=req.jurisdiction,
+        findings=findings,
+        code_backed_count=code_backed,
+        guidance_count=guidance,
+        highest_severity=highest,
+    )
 
 
 if __name__ == "__main__":

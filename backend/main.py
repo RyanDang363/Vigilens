@@ -1,15 +1,13 @@
 """FastAPI backend for the dashboard."""
 
+import logging
+import shutil
+import tempfile
+from pathlib import Path
 from uuid import uuid4
 
-from fastapi import (
-    FastAPI,
-    Depends,
-    File,
-    Header,
-    HTTPException,
-    UploadFile,
-)
+import httpx
+from fastapi import FastAPI, Depends, File, Form, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from sqlalchemy.orm import Session
@@ -33,6 +31,13 @@ from backend.services.training_service import (
     storage_path_for_source,
     summarize_source,
 )
+from backend.services.twelvelabs_service import (
+    HEALTH_OBSERVATION_TYPES,
+    EFFICIENCY_OBSERVATION_TYPES,
+    run_detection_pipeline,
+)
+
+logger = logging.getLogger(__name__)
 
 # Create tables
 Base.metadata.create_all(bind=engine)
@@ -210,3 +215,135 @@ def create_report(data: ReportCreate, db: Session = Depends(get_db)):
     db.commit()
     db.refresh(report)
     return report
+
+
+# --- All Findings (for offense-grouped view) ---
+
+@app.get("/api/findings")
+def list_all_findings(db: Session = Depends(get_db)):
+    """Return every finding with its parent employee info attached."""
+    rows = (
+        db.query(Finding, Employee.name.label("employee_name"), Employee.id.label("emp_id"), Employee.role)
+        .join(Report, Finding.report_id == Report.id)
+        .join(Employee, Report.employee_id == Employee.id)
+        .all()
+    )
+    results = []
+    for finding, emp_name, emp_id, emp_role in rows:
+        d = {c.name: getattr(finding, c.name) for c in finding.__table__.columns}
+        d["employee_name"] = emp_name
+        d["employee_id"] = emp_id
+        d["employee_role"] = emp_role
+        results.append(d)
+    return results
+
+
+# --- Video Analysis Pipeline ---
+
+ORCHESTRATOR_URL = "http://localhost:8004"
+HEALTH_TYPES = set(HEALTH_OBSERVATION_TYPES)
+EFFICIENCY_TYPES = set(EFFICIENCY_OBSERVATION_TYPES)
+
+
+def _secs_to_hms(s: float) -> str:
+    m, sec = divmod(int(s), 60)
+    h, m = divmod(m, 60)
+    return f"{h:02d}:{m:02d}:{sec:02d}"
+
+
+@app.post("/api/analyze")
+async def analyze_video(
+    video: UploadFile = File(...),
+    employee_id: str = Form(...),
+    jurisdiction: str = Form("federal"),
+    strictness: str = Form("medium"),
+    db: Session = Depends(get_db),
+):
+    """Upload a video, run TwelveLabs detection, and send to the agent pipeline."""
+    emp = db.query(Employee).filter(Employee.id == employee_id).first()
+    if not emp:
+        raise HTTPException(status_code=404, detail="Employee not found")
+
+    # Save upload to a temp file
+    suffix = Path(video.filename or "video.mp4").suffix
+    with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as tmp:
+        shutil.copyfileobj(video.file, tmp)
+        tmp_path = tmp.name
+
+    try:
+        result = run_detection_pipeline(tmp_path)
+    except Exception as e:
+        logger.exception("TwelveLabs pipeline failed")
+        raise HTTPException(status_code=502, detail=f"Video analysis failed: {e}")
+    finally:
+        Path(tmp_path).unlink(missing_ok=True)
+
+    health_events = []
+    efficiency_events = []
+
+    for i, det in enumerate(result.detections):
+        obs = {
+            "observation_id": f"obs_{i}",
+            "observation_type": det.type,
+            "timestamp_start": _secs_to_hms(det.timestamp_start),
+            "timestamp_end": _secs_to_hms(det.timestamp_end),
+            "description": det.description,
+        }
+        event = {
+            "event_id": f"evt_{i}",
+            "observations": [obs],
+        }
+        if det.type in HEALTH_TYPES:
+            health_events.append(event)
+        elif det.type in EFFICIENCY_TYPES:
+            efficiency_events.append(event)
+        else:
+            logger.warning("Unknown observation type from Pegasus: %s", det.type)
+            health_events.append(event)
+
+    orchestrator_payload = {
+        "clip_id": result.asset_id,
+        "employee_id": emp.id,
+        "employee_name": emp.name,
+        "jurisdiction": jurisdiction,
+        "strictness": strictness,
+        "health_events": health_events,
+        "efficiency_events": efficiency_events,
+        "actions": [],
+    }
+
+    # Forward to orchestrator agent
+    orchestrator_response = None
+    try:
+        async with httpx.AsyncClient() as client:
+            resp = await client.post(
+                f"{ORCHESTRATOR_URL}/api/analyze",
+                json=orchestrator_payload,
+                timeout=10.0,
+            )
+            if resp.status_code == 200:
+                orchestrator_response = resp.json()
+            else:
+                logger.warning(
+                    "Orchestrator returned %d: %s", resp.status_code, resp.text
+                )
+    except Exception as e:
+        logger.warning("Could not reach orchestrator: %s", e)
+
+    return {
+        "status": "submitted",
+        "asset_id": result.asset_id,
+        "total_detections": len(result.detections),
+        "health_events": len(health_events),
+        "efficiency_events": len(efficiency_events),
+        "detections": [
+            {
+                "type": d.type,
+                "timestamp_start": d.timestamp_start,
+                "timestamp_end": d.timestamp_end,
+                "description": d.description,
+            }
+            for d in result.detections
+        ],
+        "orchestrator": orchestrator_response,
+    }

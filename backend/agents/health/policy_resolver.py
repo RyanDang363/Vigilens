@@ -72,6 +72,23 @@ OBSERVATION_PATTERNS: list[tuple[frozenset[str], str]] = [
         frozenset({"knife_near_table_edge"}),
         "unsafe_knife_placement",
     ),
+    # Direct Pegasus outputs (single-observation patterns)
+    (
+        frozenset({"cross_contamination"}),
+        "cross_contamination",
+    ),
+    (
+        frozenset({"hand_to_face"}),
+        "insufficient_handwashing",
+    ),
+    (
+        frozenset({"food_dropped"}),
+        "contaminated_food_reuse",
+    ),
+    (
+        frozenset({"utensil_dropped"}),
+        "contaminated_utensil_reuse",
+    ),
 ]
 
 # Positive-evidence patterns that indicate NO violation (cleared)
@@ -81,7 +98,8 @@ CLEARED_PATTERNS: list[frozenset[str]] = [
 ]
 
 # Observation types that are incidents but not findings on their own
-INCIDENT_ONLY = {"utensil_dropped", "food_dropped"}
+# (empty now — Pegasus flags these directly when they constitute a real issue)
+INCIDENT_ONLY: set[str] = set()
 
 
 # ---------------------------------------------------------------------------
