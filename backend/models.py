@@ -56,6 +56,34 @@ class Finding(Base):
     report = relationship("Report", back_populates="findings")
 
 
+class BrowserActionLog(Base):
+    __tablename__ = "browser_action_logs"
+
+    id = Column(String, primary_key=True)
+    report_id = Column(String, ForeignKey("reports.id"), nullable=False)
+    action_type = Column(String, nullable=False)  # send_email | log_sheet | get_training_docs | research_violations
+    status = Column(String, default="in_progress")  # in_progress | complete | failed
+    success = Column(Boolean, default=False)
+    full_output = Column(Text, default="")
+    recording_url = Column(String, default="")
+    created_at = Column(DateTime, server_default=func.now())
+
+    report = relationship("Report", backref="action_logs")
+
+
+class GoogleAccount(Base):
+    __tablename__ = "google_accounts"
+
+    id = Column(String, primary_key=True)  # manager_id
+    email = Column(String, default="")
+    access_token = Column(String, default="")
+    refresh_token = Column(String, default="")
+    token_uri = Column(String, default="https://oauth2.googleapis.com/token")
+    scopes = Column(String, default="")
+    sheet_id = Column(String, default="")
+    sheet_url = Column(String, default="")
+
+
 class TrainingSource(Base):
     __tablename__ = "training_sources"
 

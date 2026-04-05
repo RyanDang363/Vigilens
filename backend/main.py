@@ -15,7 +15,7 @@ from sqlalchemy.orm import Session
 
 from backend.database import engine, get_db, Base
 from backend.config import describe_twelvelabs_config_for_logs, get_settings
-from backend.models import Employee, Finding, Report, TrainingSource
+from backend.models import BrowserActionLog, Employee, Finding, Report, TrainingSource
 from backend.schemas import (
     EmployeeCreate,
     EmployeeOut,
@@ -549,6 +549,50 @@ def create_report(data: ReportCreate, db: Session = Depends(get_db)):
     return report
 
 
+# --- Browser Action Logs ---
+
+@app.post("/api/action-logs")
+def create_or_update_action_log(
+    payload: dict,
+    db: Session = Depends(get_db),
+    manager_id: str = Depends(require_manager),
+):
+    """Create or update a browser action log."""
+    status = payload.get("status", "complete")
+
+    # Check if an in_progress log exists for this report + action
+    existing = (
+        db.query(BrowserActionLog)
+        .filter(
+            BrowserActionLog.report_id == payload["report_id"],
+            BrowserActionLog.action_type == payload["action_type"],
+            BrowserActionLog.status == "in_progress",
+        )
+        .first()
+    )
+
+    if existing:
+        existing.status = "complete" if payload.get("success") else "failed"
+        existing.success = payload.get("success", False)
+        existing.full_output = payload.get("full_output", "")
+        existing.recording_url = payload.get("recording_url", "")
+        db.commit()
+        return {"id": existing.id}
+
+    log = BrowserActionLog(
+        id=str(uuid4()),
+        report_id=payload["report_id"],
+        action_type=payload["action_type"],
+        status=status,
+        success=payload.get("success", False),
+        full_output=payload.get("full_output", ""),
+        recording_url=payload.get("recording_url", ""),
+    )
+    db.add(log)
+    db.commit()
+    return {"id": log.id}
+
+
 # --- All Findings (for offense-grouped view) ---
 
 @app.get("/api/findings")
@@ -676,4 +720,129 @@ async def analyze_video(
             for d in result.detections
         ],
         "orchestrator": orchestrator_response,
+    }
+
+
+# --- Google OAuth + Sheets ---
+
+from fastapi.responses import RedirectResponse
+from backend.services.google_sheets import (
+    get_oauth_login_url,
+    handle_oauth_callback,
+    create_safewatch_sheet,
+    append_findings_to_sheet,
+    get_account,
+)
+
+
+@app.get("/api/google/status")
+def google_status(
+    db: Session = Depends(get_db),
+    manager_id: str = Depends(require_manager),
+):
+    """Check if the manager has connected their Google account."""
+    account = get_account(manager_id, db)
+    if not account:
+        return {"connected": False}
+    return {
+        "connected": True,
+        "email": account.email,
+        "sheet_id": account.sheet_id,
+        "sheet_url": account.sheet_url,
+    }
+
+
+@app.get("/api/google/login")
+def google_login(manager_id: str = Depends(require_manager)):
+    """Redirect the manager to Google's OAuth consent page."""
+    url = get_oauth_login_url(manager_id)
+    return {"auth_url": url}
+
+
+@app.get("/api/google/callback")
+def google_callback(
+    code: str,
+    state: str,
+    db: Session = Depends(get_db),
+):
+    """Google redirects here after consent. Exchange code for tokens."""
+    account = handle_oauth_callback(code, state, db)
+
+    # Auto-create the sheet if one doesn't exist
+    if not account.sheet_id:
+        create_safewatch_sheet(account, db)
+
+    # Redirect back to the frontend settings page
+    return RedirectResponse(url="http://localhost:5173/settings?google=connected")
+
+
+@app.post("/api/google/create-sheet")
+def create_sheet(
+    db: Session = Depends(get_db),
+    manager_id: str = Depends(require_manager),
+):
+    """Create (or recreate) a SafeWatch spreadsheet on the manager's Google account."""
+    account = get_account(manager_id, db)
+    if not account:
+        raise HTTPException(status_code=400, detail="Google account not connected")
+
+    result = create_safewatch_sheet(account, db)
+    return result
+
+
+@app.post("/api/google/log-findings")
+def log_findings_to_sheet(
+    report_id: str,
+    db: Session = Depends(get_db),
+    manager_id: str = Depends(require_manager),
+):
+    """Append all findings from a report to the manager's Google Sheet."""
+    account = get_account(manager_id, db)
+    if not account:
+        raise HTTPException(status_code=400, detail="Google account not connected")
+    if not account.sheet_id:
+        raise HTTPException(status_code=400, detail="No sheet created yet")
+
+    report = db.query(Report).filter(Report.id == report_id).first()
+    if not report:
+        raise HTTPException(status_code=404, detail="Report not found")
+
+    employee = db.query(Employee).filter(Employee.id == report.employee_id).first()
+    findings_dicts = [
+        {c.name: getattr(f, c.name) for c in f.__table__.columns}
+        for f in report.findings
+    ]
+
+    count = append_findings_to_sheet(
+        account,
+        employee.name if employee else report.employee_id,
+        findings_dicts,
+    )
+    return {
+        "rows_appended": count,
+        "sheet_url": account.sheet_url,
+    }
+
+
+@app.post("/api/google/log-findings-direct")
+def log_findings_direct(
+    payload: dict,
+    db: Session = Depends(get_db),
+    manager_id: str = Depends(require_manager),
+):
+    """Append findings directly (from browser agent) without needing a report_id."""
+    account = get_account(manager_id, db)
+    if not account:
+        raise HTTPException(status_code=400, detail="Google account not connected")
+    if not account.sheet_id:
+        raise HTTPException(status_code=400, detail="No sheet created yet")
+
+    count = append_findings_to_sheet(
+        account,
+        payload.get("employee_name", "Unknown"),
+        payload.get("findings", []),
+    )
+    return {
+        "rows_appended": count,
+        "sheet_url": account.sheet_url,
     }

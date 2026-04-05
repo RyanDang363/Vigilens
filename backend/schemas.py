@@ -45,6 +45,19 @@ class ReportCreate(BaseModel):
     findings: list[FindingCreate] = []
 
 
+class ActionLogOut(BaseModel):
+    id: str
+    action_type: str
+    status: str = "in_progress"
+    success: bool
+    full_output: str = ""
+    recording_url: str | None = ""
+    created_at: datetime | None = None
+
+    class Config:
+        from_attributes = True
+
+
 class ReportOut(BaseModel):
     id: str
     employee_id: str
@@ -57,6 +70,7 @@ class ReportOut(BaseModel):
     efficiency_count: int
     highest_severity: str
     findings: list[FindingOut] = []
+    action_logs: list[ActionLogOut] = []
 
     class Config:
         from_attributes = True

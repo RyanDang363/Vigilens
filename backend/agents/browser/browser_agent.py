@@ -34,6 +34,7 @@ from backend.agents.browser.actions import (
     send_report_email,
     log_to_sheets,
     get_training_docs,
+    research_violations,
 )
 
 # Lazy-import the SDK so the agent module can still be loaded if the SDK
@@ -73,7 +74,11 @@ ACTION_HANDLERS = {
     "send_email": send_report_email,
     "log_sheet": log_to_sheets,
     "get_training_docs": get_training_docs,
+    "research_violations": research_violations,
 }
+
+# Actions that don't need a browser session (use backend API directly)
+API_ONLY_ACTIONS = {"log_sheet", "get_training_docs"}
 
 # Track processed requests to ignore mailbox duplicates
 _processed_sessions: set[str] = set()
@@ -102,13 +107,37 @@ async def handle_action(ctx: Context, sender: str, msg: BrowserActionRequest):
         ))
         return
 
+    # API-only actions (log_sheet, get_training_docs) — no browser session needed
+    if msg.action_type in API_ONLY_ACTIONS:
+        try:
+            result = await handler(msg)
+            output = str(result) if result else "Action completed"
+            response = BrowserActionResponse(
+                chat_session_id=msg.chat_session_id,
+                action_type=msg.action_type,
+                success="error" not in output.lower(),
+                message=output,
+            )
+        except Exception as e:
+            ctx.logger.exception(f"{msg.action_type} failed: {e}")
+            response = BrowserActionResponse(
+                chat_session_id=msg.chat_session_id,
+                action_type=msg.action_type,
+                success=False,
+                message=f"Error: {str(e)[:300]}",
+            )
+        await ctx.send(sender, response)
+        ctx.logger.info(f"{msg.action_type} complete: success={response.success}")
+        return
+
+    # All other actions use Browser Use Cloud SDK
     client = _get_client()
     recording_url = None
 
     try:
         # Email uses agentmail (no Google login needed).
-        # Sheets and training docs need the Google profile for authentication.
-        needs_google = msg.action_type in ("log_sheet", "get_training_docs")
+        # Training docs need the Google profile for authentication.
+        needs_google = msg.action_type == "get_training_docs"
 
         session_kwargs = {"enable_recording": True}
         if needs_google and GOOGLE_PROFILE_ID:
@@ -122,7 +151,7 @@ async def handle_action(ctx: Context, sender: str, msg: BrowserActionRequest):
         result = await handler(client, session.id, msg)
         output = getattr(result, "output", str(result)) if result else ""
 
-        # Check if Google login failed (only relevant for sheets/docs)
+        # Check if Google login failed (only relevant for training docs)
         if needs_google and "NOT_LOGGED_IN" in (output or ""):
             ctx.logger.warning(
                 "Google session expired. Re-run profile setup:\n"
@@ -153,7 +182,7 @@ async def handle_action(ctx: Context, sender: str, msg: BrowserActionRequest):
                 chat_session_id=msg.chat_session_id,
                 action_type=msg.action_type,
                 success=success,
-                message=output[:500] if output else "Action completed",
+                message=output if output else "Action completed",
                 recording_url=recording_url,
             )
 
@@ -207,9 +236,10 @@ async def handle_chat(ctx: Context, sender: str, msg: ChatMessage):
     response_text = (
         "Browser Agent — I execute web actions on behalf of the orchestrator.\n\n"
         "Supported actions:\n"
-        "  send_email — compose and send a report email via Gmail\n"
-        "  log_sheet — append finding rows to a Google Sheet\n"
-        "  get_training_docs — extract relevant training sections from a doc\n\n"
+        "  send_email — compose and send a report email via agentmail\n"
+        "  log_sheet — append finding rows to Google Sheet (Sheets API)\n"
+        "  get_training_docs — search uploaded training docs for relevant content\n"
+        "  research_violations — search the web for supporting documentation\n\n"
         f"Browser Use API key: {'configured' if BROWSER_USE_API_KEY else 'NOT SET'}\n"
         f"Google profile: {GOOGLE_PROFILE_ID or 'NOT SET'}\n\n"
         "Send me a BrowserActionRequest from the orchestrator to trigger an action."
@@ -234,6 +264,88 @@ async def handle_ack(ctx: Context, sender: str, msg: ChatAcknowledgement):
 
 
 browser_agent.include(chat_proto, publish_manifest=True)
+
+
+# ---------------------------------------------------------------------------
+# REST endpoint — allows the orchestrator to trigger actions via HTTP
+# ---------------------------------------------------------------------------
+
+@browser_agent.on_rest_post("/execute", BrowserActionRequest, BrowserActionResponse)
+async def handle_rest_action(ctx: Context, msg: BrowserActionRequest) -> BrowserActionResponse:
+    """REST entry point for browser actions — called by orchestrator via HTTP."""
+    ctx.logger.info(f"REST browser action: {msg.action_type} for {msg.employee_name}")
+
+    handler = ACTION_HANDLERS.get(msg.action_type)
+    if not handler:
+        return BrowserActionResponse(
+            chat_session_id=msg.chat_session_id,
+            action_type=msg.action_type,
+            success=False,
+            message=f"Unknown action type: {msg.action_type}",
+        )
+
+    # API-only actions (log_sheet, get_training_docs)
+    if msg.action_type in API_ONLY_ACTIONS:
+        try:
+            result = await handler(msg)
+            output = str(result) if result else "Action completed"
+            return BrowserActionResponse(
+                chat_session_id=msg.chat_session_id,
+                action_type=msg.action_type,
+                success="error" not in output.lower(),
+                message=output,
+            )
+        except Exception as e:
+            ctx.logger.exception(f"{msg.action_type} failed: {e}")
+            return BrowserActionResponse(
+                chat_session_id=msg.chat_session_id,
+                action_type=msg.action_type,
+                success=False,
+                message=f"Error: {str(e)[:300]}",
+            )
+
+    # Browser Use actions (send_email, research_violations)
+    client = _get_client()
+    try:
+        needs_google = msg.action_type == "get_training_docs"
+        session_kwargs = {"enable_recording": True}
+        if needs_google and GOOGLE_PROFILE_ID:
+            session_kwargs["profile_id"] = GOOGLE_PROFILE_ID
+
+        session = await client.sessions.create(**session_kwargs)
+        ctx.logger.info(f"Browser session: {session.id} | Live: {session.live_url}")
+
+        result = await handler(client, session.id, msg)
+        output = getattr(result, "output", str(result)) if result else ""
+
+        recording_url = None
+        try:
+            recordings = await client.sessions.wait_for_recording(session.id)
+            if recordings:
+                recording_url = recordings[0]
+        except Exception:
+            pass
+
+        return BrowserActionResponse(
+            chat_session_id=msg.chat_session_id,
+            action_type=msg.action_type,
+            success=result is not None,
+            message=(output if output else "Action completed"),
+            recording_url=recording_url,
+        )
+    except Exception as e:
+        ctx.logger.exception(f"Browser action failed: {e}")
+        return BrowserActionResponse(
+            chat_session_id=msg.chat_session_id,
+            action_type=msg.action_type,
+            success=False,
+            message=f"Error: {str(e)[:300]}",
+        )
+    finally:
+        try:
+            await client.sessions.stop(session.id)
+        except Exception:
+            pass
 
 
 if __name__ == "__main__":

@@ -47,6 +47,16 @@ export interface Finding {
   clip_url: string;
 }
 
+export interface ActionLog {
+  id: string;
+  action_type: string;
+  status: string;
+  success: boolean;
+  full_output: string;
+  recording_url: string;
+  created_at: string;
+}
+
 export interface Report {
   id: string;
   employee_id: string;
@@ -59,6 +69,7 @@ export interface Report {
   efficiency_count: number;
   highest_severity: string;
   findings: Finding[];
+  action_logs: ActionLog[];
 }
 
 export interface ReportSummary {
@@ -288,6 +299,42 @@ export async function analyzeEmployeeVideo(
       maxContentLength: Infinity,
       maxBodyLength: Infinity,
     }
+  );
+  return data;
+}
+
+// --- Google OAuth + Sheets ---
+
+export interface GoogleStatus {
+  connected: boolean;
+  email?: string;
+  sheet_id?: string;
+  sheet_url?: string;
+}
+
+export async function fetchGoogleStatus(): Promise<GoogleStatus> {
+  const { data } = await api.get("/api/google/status");
+  return data;
+}
+
+export async function getGoogleLoginUrl(): Promise<string> {
+  const { data } = await api.get("/api/google/login");
+  return data.auth_url;
+}
+
+export async function createGoogleSheet(): Promise<{
+  sheet_id: string;
+  sheet_url: string;
+}> {
+  const { data } = await api.post("/api/google/create-sheet");
+  return data;
+}
+
+export async function logFindingsToSheet(
+  reportId: string
+): Promise<{ rows_appended: number; sheet_url: string }> {
+  const { data } = await api.post(
+    `/api/google/log-findings?report_id=${reportId}`
   );
   return data;
 }

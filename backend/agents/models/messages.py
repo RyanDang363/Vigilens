@@ -122,12 +122,13 @@ class BrowserActionRequest(Model):
     """Sent by the orchestrator to the Browser Agent."""
 
     chat_session_id: str
-    action_type: str  # "send_email" | "log_sheet" | "get_training_docs"
+    action_type: str  # "send_email" | "log_sheet" | "get_training_docs" | "research_violations"
     employee_name: str
     employee_email: Optional[str] = None
     manager_email: Optional[str] = None
     report_summary: str  # formatted text summary of findings
     findings_data: list[dict]  # raw finding dicts for sheet logging
+    report_id: Optional[str] = None  # for Sheets API logging
     sheet_url: Optional[str] = None  # Google Sheets URL
     training_doc_url: Optional[str] = None
 

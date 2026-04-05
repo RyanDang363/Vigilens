@@ -14,6 +14,7 @@ Follows the fetch-hackathon-quickstarter orchestrator pattern.
 
 from __future__ import annotations
 
+import asyncio
 import httpx
 from datetime import datetime, timezone
 from uuid import uuid4
@@ -26,12 +27,21 @@ from uagents_core.contrib.protocols.chat import (
     TextContent,
     chat_protocol_spec,
 )
+from uagents_core.contrib.protocols.payment import (
+    CommitPayment,
+    CompletePayment,
+    Funds,
+    RejectPayment,
+    RequestPayment,
+)
 
 from backend.agents.models.config import (
     ORCHESTRATOR_SEED,
     HEALTH_AGENT_ADDRESS,
     EFFICIENCY_AGENT_ADDRESS,
     BROWSER_AGENT_ADDRESS,
+    STRIPE_AMOUNT_CENTS,
+    STRIPE_SECRET_KEY,
 )
 from backend.agents.models.messages import (
     BrowserActionRequest,
@@ -45,6 +55,11 @@ from backend.agents.models.messages import (
     OrchestratorRequest,
 )
 from backend.agents.orchestrator.state import PipelineState, state_service
+from backend.agents.orchestrator.stripe_payments import (
+    create_checkout_session,
+    verify_checkout_paid,
+)
+from backend.agents.orchestrator.payment_proto import build_payment_proto
 
 
 BACKEND_API_URL = "http://localhost:8000"
@@ -73,16 +88,15 @@ def _max_severity(*severities: str) -> str:
 
 def _build_report_summary(state: PipelineState) -> str:
     total = len(state.health_findings) + len(state.efficiency_findings)
-    lines = [
-        f"Report for {state.employee_name} -- clip {state.clip_id}",
-        f"Jurisdiction: {state.jurisdiction}",
-        f"Total findings: {total}",
-        f"  Health (code-backed): {state.health_code_backed}",
-        f"  Health (guidance): {state.health_guidance}",
-        f"  Efficiency: {state.efficiency_count}",
-        f"Highest severity: {state.highest_severity}",
-    ]
-    return "\n".join(lines)
+    sev = state.highest_severity.upper()
+    return (
+        f"**Jurisdiction:** {state.jurisdiction.title()}  \n"
+        f"**Total findings:** {total}  \n"
+        f"- Health (code-backed): {state.health_code_backed}  \n"
+        f"- Health (guidance): {state.health_guidance}  \n"
+        f"- Efficiency: {state.efficiency_count}  \n"
+        f"**Highest severity:** {sev}"
+    )
 
 
 async def _post_report_to_backend(state: PipelineState):
@@ -192,18 +206,8 @@ async def _finalize_pipeline(ctx: Context, session_id: str):
 
     # Respond to original sender (skip if triggered via REST with no sender)
     if state.user_sender_address:
-        summary = _build_report_summary(state)
-        await ctx.send(
-            state.user_sender_address,
-            ChatMessage(
-                timestamp=datetime.now(tz=timezone.utc),
-                msg_id=uuid4(),
-                content=[
-                    TextContent(type="text", text=summary),
-                    EndSessionContent(type="end-session"),
-                ],
-            ),
-        )
+        report_text = _format_rich_report(state)
+        await ctx.send(state.user_sender_address, _make_end_chat(report_text))
 
 
 # ---------------------------------------------------------------------------
@@ -345,34 +349,294 @@ async def handle_browser_response(ctx: Context, sender: str, msg: BrowserActionR
 
 
 # ---------------------------------------------------------------------------
-# Chat protocol -- allows triggering the pipeline from Agentverse chat
-# with a demo using mock observations
+# Chat protocol -- interactive demo via ASI One / Agentverse
+# Supports intent detection, parameter extraction, multiple scenarios,
+# and Stripe payment gating.
 # ---------------------------------------------------------------------------
 
-DEMO_HEALTH_EVENTS = [
-    EventCandidate(
-        event_id="demo_h1",
-        observations=[
-            Observation(observation_id="o1", observation_type="cross_contamination",
-                        timestamp_start="00:01:42", timestamp_end="00:01:52",
-                        description="Worker handled raw chicken then touched lettuce prep area without washing hands"),
+# Demo scenarios — each represents a different employee clip
+DEMO_SCENARIOS = {
+    "maria": {
+        "employee_id": "emp_1",
+        "employee_name": "Maria Garcia",
+        "description": "Line cook at Prep Station A — cross contamination and phone use during prep",
+        "health_events": [
+            EventCandidate(
+                event_id="demo_h1",
+                observations=[
+                    Observation(observation_id="o1", observation_type="cross_contamination",
+                                timestamp_start="00:01:42", timestamp_end="00:01:52",
+                                description="Worker handled raw chicken then touched lettuce prep area without washing hands"),
+                ],
+                corrective_action_observed=False,
+            ),
+            EventCandidate(
+                event_id="demo_h2",
+                observations=[
+                    Observation(observation_id="o2", observation_type="brief_hand_rinse",
+                                timestamp_start="00:06:30", timestamp_end="00:06:38",
+                                description="Worker rinsed hands for about 8 seconds without soap"),
+                ],
+                corrective_action_observed=False,
+            ),
         ],
-        corrective_action_observed=False,
-    ),
-]
+        "efficiency_events": [
+            EventCandidate(
+                event_id="demo_e1",
+                observations=[
+                    Observation(observation_id="o4", observation_type="phone_usage",
+                                timestamp_start="00:03:00", timestamp_end="00:03:22",
+                                description="Worker texting during prep"),
+                ],
+            ),
+        ],
+    },
+    "james": {
+        "employee_id": "emp_2",
+        "employee_name": "James Chen",
+        "description": "Sous chef at Grill Station — unsafe knife placement and extended chatting",
+        "health_events": [
+            EventCandidate(
+                event_id="demo_h3",
+                observations=[
+                    Observation(observation_id="o5", observation_type="knife_near_table_edge",
+                                timestamp_start="00:04:10", timestamp_end="00:04:15",
+                                description="Knife placed at edge of prep table, handle hanging over"),
+                ],
+                corrective_action_observed=False,
+            ),
+        ],
+        "efficiency_events": [
+            EventCandidate(
+                event_id="demo_e2",
+                observations=[
+                    Observation(observation_id="o6", observation_type="extended_chatting",
+                                timestamp_start="00:08:00", timestamp_end="00:08:45",
+                                description="Worker chatting with coworker for 45 seconds during service"),
+                ],
+            ),
+        ],
+    },
+    "sarah": {
+        "employee_id": "emp_3",
+        "employee_name": "Sarah Johnson",
+        "description": "Prep cook at Station B — glove misuse and dropped utensil reuse",
+        "health_events": [
+            EventCandidate(
+                event_id="demo_h4",
+                observations=[
+                    Observation(observation_id="o7", observation_type="glove_not_changed",
+                                timestamp_start="00:02:20", timestamp_end="00:02:30",
+                                description="Worker continued with same gloves after handling raw meat then touched ready-to-eat items"),
+                ],
+                corrective_action_observed=False,
+            ),
+            EventCandidate(
+                event_id="demo_h5",
+                observations=[
+                    Observation(observation_id="o8", observation_type="utensil_dropped",
+                                timestamp_start="00:05:00", timestamp_end="00:05:08",
+                                description="Worker dropped tongs on floor and picked them up to continue using"),
+                    Observation(observation_id="o9", observation_type="utensil_reused_after_floor",
+                                timestamp_start="00:05:08", timestamp_end="00:05:15",
+                                description="Dropped tongs placed back on prep surface without washing"),
+                ],
+                corrective_action_observed=False,
+            ),
+        ],
+        "efficiency_events": [],
+    },
+}
 
-DEMO_EFFICIENCY_EVENTS = [
-    EventCandidate(
-        event_id="demo_e1",
-        observations=[
-            Observation(observation_id="o4", observation_type="phone_usage",
-                        timestamp_start="00:03:00", timestamp_end="00:03:22",
-                        description="Worker texting during prep"),
-        ],
-    ),
-]
+# --- Intent detection ---
+
+_GREETING_WORDS = ("hello", "hi", "hey", "what can you do", "who are you", "help", "start")
+_ANALYZE_WORDS = ("analyze", "run", "report", "check", "scan", "review", "evaluate", "inspect")
+_STATUS_WORDS = ("status", "agents", "how many", "system")
+
+
+def _detect_intent(text: str) -> str:
+    """Detect user intent from message text."""
+    t = text.lower().strip()
+    if any(t.startswith(g) or t == g for g in _GREETING_WORDS):
+        return "greeting"
+    if any(w in t for w in _ANALYZE_WORDS):
+        return "analyze"
+    if any(w in t for w in _STATUS_WORDS):
+        return "status"
+    return "analyze"  # default: assume they want to run an analysis
+
+
+def _extract_scenario(text: str) -> str | None:
+    """Extract which employee scenario the user is asking about."""
+    t = text.lower()
+    for key in DEMO_SCENARIOS:
+        if key in t:
+            return key
+    # Check full names
+    for key, scenario in DEMO_SCENARIOS.items():
+        name_parts = scenario["employee_name"].lower().split()
+        if any(part in t for part in name_parts):
+            return key
+    return None
+
+
+def _extract_jurisdiction(text: str) -> str:
+    """Extract jurisdiction from user text."""
+    t = text.lower()
+    if "california" in t or "ca" in t:
+        return "california"
+    if "federal" in t or "fda" in t:
+        return "federal"
+    return "california"  # default for demo
+
+
+def _extract_strictness(text: str) -> str:
+    """Extract strictness level from user text."""
+    t = text.lower()
+    if "strict" in t or "high" in t:
+        return "high"
+    if "lenient" in t or "low" in t:
+        return "low"
+    return "medium"
+
+
+# --- Rich response formatting ---
+
+_SEVERITY_ICON = {"low": "[LOW]", "medium": "[MED]", "high": "[HIGH]", "critical": "[CRIT]"}
+
+
+def _format_rich_report(state: PipelineState) -> str:
+    """Format a rich, readable report for the chat response."""
+    total = len(state.health_findings) + len(state.efficiency_findings)
+    sev = state.highest_severity.upper()
+
+    lines = [
+        f"SafeWatch Analysis Report",
+        f"========================",
+        f"Employee: {state.employee_name}",
+        f"Jurisdiction: {state.jurisdiction.upper()}",
+        f"Highest Severity: {sev}",
+        f"",
+        f"Summary: {total} finding(s) detected",
+        f"  Health/Safety: {len(state.health_findings)} ({state.health_code_backed} code-backed, {state.health_guidance} guidance)",
+        f"  Efficiency: {len(state.efficiency_findings)}",
+        "",
+    ]
+
+    if state.health_findings:
+        lines.append("--- Health & Safety Findings ---")
+        for f in state.health_findings:
+            sev_icon = _SEVERITY_ICON.get(f.get("severity", "low"), "[?]")
+            concluded = f.get("concluded_type", "unknown").replace("_", " ").title()
+            ts = f.get("timestamp_start", "")
+            reasoning = f.get("reasoning", "")
+            policy = f.get("policy_reference", {})
+            code = policy.get("code", "")
+            section = policy.get("section", "")
+            recommendation = f.get("training_recommendation", "")
+
+            lines.append(f"")
+            lines.append(f"{sev_icon} {concluded} ({ts})")
+            if reasoning:
+                lines.append(f"  {reasoning}")
+            if code and section:
+                lines.append(f"  Policy: {code} {section}")
+            if recommendation:
+                lines.append(f"  Coaching: {recommendation}")
+
+    if state.efficiency_findings:
+        lines.append("")
+        lines.append("--- Efficiency Findings ---")
+        for f in state.efficiency_findings:
+            sev_icon = _SEVERITY_ICON.get(f.get("severity", "low"), "[?]")
+            concluded = f.get("concluded_type", "unknown").replace("_", " ").title()
+            ts = f.get("timestamp_start", "")
+            coaching = f.get("coaching_recommendation", "")
+            duration = f.get("duration_seconds", 0)
+
+            lines.append(f"")
+            lines.append(f"{sev_icon} {concluded} ({ts}, {duration:.0f}s)")
+            if coaching:
+                lines.append(f"  Coaching: {coaching}")
+
+    lines.append("")
+    lines.append("Report saved to SafeWatch dashboard.")
+    lines.append("Actions triggered: email notification, Google Sheets log, training doc lookup, web research.")
+
+    return "\n".join(lines)
+
+
+# --- Chat protocol ---
 
 chat_proto = Protocol(spec=chat_protocol_spec)
+
+
+def _make_chat(text: str) -> ChatMessage:
+    return ChatMessage(
+        timestamp=datetime.now(timezone.utc),
+        msg_id=uuid4(),
+        content=[TextContent(type="text", text=text)],
+    )
+
+
+def _make_end_chat(text: str) -> ChatMessage:
+    return ChatMessage(
+        timestamp=datetime.now(timezone.utc),
+        msg_id=uuid4(),
+        content=[
+            TextContent(type="text", text=text),
+            EndSessionContent(type="end-session"),
+        ],
+    )
+
+
+def _load_pay_state(ctx: Context, sender: str) -> dict:
+    return ctx.storage.get(f"pay:{sender}") or {}
+
+
+def _save_pay_state(ctx: Context, sender: str, state: dict):
+    ctx.storage.set(f"pay:{sender}", state)
+
+
+def _clear_pay_state(ctx: Context, sender: str):
+    ctx.storage.set(f"pay:{sender}", {})
+
+
+GREETING_TEXT = (
+    "Welcome to SafeWatch — AI-powered workplace safety monitoring.\n\n"
+    "I coordinate a multi-agent system that analyzes workplace footage for:\n"
+    "  - Health code violations (FDA Food Code, CalCode)\n"
+    "  - Workplace safety hazards (OSHA)\n"
+    "  - Efficiency issues (phone use, distractions)\n\n"
+    "My agents:\n"
+    "  Health Agent — evaluates food safety and hygiene violations\n"
+    "  Efficiency Agent — detects productivity and focus issues\n"
+    "  Browser Agent — sends emails, logs to Google Sheets, researches regulations\n\n"
+    "Available demo scenarios:\n"
+    "  1. \"Analyze Maria\" — cross contamination + phone use (high severity)\n"
+    "  2. \"Analyze James\" — unsafe knife placement + chatting (medium)\n"
+    "  3. \"Analyze Sarah\" — glove misuse + dropped utensil reuse (critical)\n\n"
+    "Try: \"Run analysis for Maria in California\" or just \"analyze Sarah\""
+)
+
+STATUS_TEXT = (
+    "SafeWatch System Status\n"
+    "=======================\n"
+    "Orchestrator: ONLINE (port 8004)\n"
+    "Health Agent: ONLINE (port 8001) — FDA/CalCode policy engine\n"
+    "Efficiency Agent: ONLINE (port 8002) — duration-based threshold engine\n"
+    "Browser Agent: ONLINE (port 8003) — email, sheets, web research\n"
+    "Backend API: ONLINE (port 8000) — dashboard & data store\n\n"
+    "Capabilities:\n"
+    "  - Video event analysis via TwelveLabs\n"
+    "  - Multi-agent health + efficiency evaluation\n"
+    "  - Automated email reports (Browser Use agentmail)\n"
+    "  - Google Sheets logging (OAuth + Sheets API)\n"
+    "  - Online regulation research (Browser Use)\n"
+    "  - Stripe payment integration\n"
+    "  - Real-time dashboard at localhost:5173"
+)
 
 
 @chat_proto.on_message(ChatMessage)
@@ -391,19 +655,169 @@ async def handle_chat(ctx: Context, sender: str, msg: ChatMessage):
 
     ctx.logger.info(f"Chat from {sender}: {user_text[:100]}")
 
-    # Trigger a demo pipeline run
-    demo_request = OrchestratorRequest(
-        clip_id="demo_clip_001",
-        employee_id="emp_1",
-        employee_name="Maria Garcia",
-        jurisdiction="california",
-        health_events=DEMO_HEALTH_EVENTS,
-        efficiency_events=DEMO_EFFICIENCY_EVENTS,
-        actions=[],  # no browser actions in demo chat
+    intent = _detect_intent(user_text)
+    ctx.logger.info(f"Intent: {intent}")
+
+    # --- Greeting / Help ---
+    if intent == "greeting":
+        await ctx.send(sender, _make_chat(GREETING_TEXT))
+        return
+
+    # --- System Status ---
+    if intent == "status":
+        await ctx.send(sender, _make_chat(STATUS_TEXT))
+        return
+
+    # --- Analysis request: extract parameters ---
+    scenario_key = _extract_scenario(user_text)
+    jurisdiction = _extract_jurisdiction(user_text)
+    strictness = _extract_strictness(user_text)
+
+    if not scenario_key:
+        # Default to Maria if no specific employee mentioned
+        scenario_key = "maria"
+
+    scenario = DEMO_SCENARIOS[scenario_key]
+
+    ctx.logger.info(
+        f"Extracted params: scenario={scenario_key} "
+        f"jurisdiction={jurisdiction} strictness={strictness}"
     )
 
-    # Simulate the orchestrator receiving this request
-    await handle_request(ctx, sender, demo_request)
+    # --- Stripe payment gate (if configured) ---
+    pay_state = _load_pay_state(ctx, sender)
+    awaiting_payment = bool(pay_state.get("awaiting_payment"))
+    pending_stripe = pay_state.get("pending_stripe")
+
+    if STRIPE_SECRET_KEY:
+        if awaiting_payment and pending_stripe:
+            req = RequestPayment(
+                accepted_funds=[
+                    Funds(currency="USD", amount=f"{STRIPE_AMOUNT_CENTS / 100:.2f}", payment_method="stripe")
+                ],
+                recipient=str(ctx.agent.address),
+                deadline_seconds=300,
+                reference=str(ctx.session),
+                description=f"Pay ${STRIPE_AMOUNT_CENTS / 100:.2f} for SafeWatch analysis — {scenario['employee_name']}",
+                metadata={"stripe": pending_stripe, "service": "safewatch_report"},
+            )
+            await ctx.send(sender, req)
+            await ctx.send(sender, _make_chat(
+                "Payment is still pending. Complete the checkout above to receive your report."
+            ))
+            return
+
+        description = f"SafeWatch safety analysis for {scenario['employee_name']}"
+        checkout = await asyncio.to_thread(
+            create_checkout_session,
+            user_address=sender,
+            chat_session_id=str(ctx.session),
+            description=description,
+        )
+
+        _save_pay_state(ctx, sender, {
+            "awaiting_payment": True,
+            "pending_stripe": checkout,
+            "scenario_key": scenario_key,
+            "jurisdiction": jurisdiction,
+            "strictness": strictness,
+        })
+
+        req = RequestPayment(
+            accepted_funds=[
+                Funds(currency="USD", amount=f"{STRIPE_AMOUNT_CENTS / 100:.2f}", payment_method="stripe")
+            ],
+            recipient=str(ctx.agent.address),
+            deadline_seconds=300,
+            reference=str(ctx.session),
+            description=f"Pay ${STRIPE_AMOUNT_CENTS / 100:.2f} for SafeWatch analysis — {scenario['employee_name']}",
+            metadata={"stripe": checkout, "service": "safewatch_report"},
+        )
+        await ctx.send(sender, req)
+        await ctx.send(sender, _make_chat(
+            f"Preparing analysis for {scenario['employee_name']}.\n"
+            f"Jurisdiction: {jurisdiction.upper()} | Strictness: {strictness.upper()}\n\n"
+            "Complete the payment above to generate your report."
+        ))
+        return
+
+    # --- No Stripe: run pipeline directly ---
+    await ctx.send(sender, _make_chat(
+        f"Running SafeWatch analysis for {scenario['employee_name']}...\n"
+        f"Jurisdiction: {jurisdiction.upper()} | Strictness: {strictness.upper()}\n"
+        "Dispatching to Health Agent + Efficiency Agent..."
+    ))
+
+    await _run_analysis(ctx, sender, scenario_key, jurisdiction, strictness)
+
+
+async def _run_analysis(
+    ctx: Context, sender: str,
+    scenario_key: str, jurisdiction: str, strictness: str,
+):
+    """Run the multi-agent pipeline for a given demo scenario."""
+    scenario = DEMO_SCENARIOS[scenario_key]
+
+    request = OrchestratorRequest(
+        clip_id=f"demo_{scenario_key}_001",
+        employee_id=scenario["employee_id"],
+        employee_name=scenario["employee_name"],
+        jurisdiction=jurisdiction,
+        strictness=strictness,
+        health_events=scenario["health_events"],
+        efficiency_events=scenario["efficiency_events"],
+        actions=["send_email", "log_sheet", "get_training_docs", "research_violations"],
+    )
+
+    await handle_request(ctx, sender, request)
+
+
+# ---------------------------------------------------------------------------
+# Stripe payment handlers
+# ---------------------------------------------------------------------------
+
+async def _on_payment_commit(ctx: Context, sender: str, msg: CommitPayment):
+    ctx.logger.info(f"Payment commit from {sender}: tx={msg.transaction_id}")
+
+    if msg.funds.payment_method != "stripe" or not msg.transaction_id:
+        await ctx.send(sender, RejectPayment(
+            reason="Unsupported payment method (expected Stripe)."
+        ))
+        return
+
+    paid = await asyncio.to_thread(verify_checkout_paid, msg.transaction_id)
+    if not paid:
+        await ctx.send(sender, RejectPayment(
+            reason="Stripe payment not completed yet. Please finish checkout."
+        ))
+        return
+
+    await ctx.send(sender, CompletePayment(transaction_id=msg.transaction_id))
+
+    # Recover saved parameters
+    pay_state = _load_pay_state(ctx, sender)
+    scenario_key = pay_state.get("scenario_key", "maria")
+    jurisdiction = pay_state.get("jurisdiction", "california")
+    strictness = pay_state.get("strictness", "medium")
+    _clear_pay_state(ctx, sender)
+
+    scenario = DEMO_SCENARIOS.get(scenario_key, DEMO_SCENARIOS["maria"])
+
+    ctx.logger.info(f"Payment verified for {sender} — running {scenario_key} pipeline")
+    await ctx.send(sender, _make_chat(
+        f"Payment confirmed! Running full SafeWatch analysis for {scenario['employee_name']}...\n"
+        "Dispatching to Health Agent + Efficiency Agent + Browser Agent..."
+    ))
+
+    await _run_analysis(ctx, sender, scenario_key, jurisdiction, strictness)
+
+
+async def _on_payment_reject(ctx: Context, sender: str, msg: RejectPayment):
+    ctx.logger.info(f"Payment rejected by {sender}: {msg.reason}")
+    _clear_pay_state(ctx, sender)
+    await ctx.send(sender, _make_chat(
+        f"Payment cancelled. {msg.reason or ''}\n\nSend me a message anytime to try again.".strip()
+    ))
 
 
 @chat_proto.on_message(ChatAcknowledgement)
@@ -412,6 +826,10 @@ async def handle_ack(ctx: Context, sender: str, msg: ChatAcknowledgement):
 
 
 orchestrator.include(chat_proto, publish_manifest=True)
+orchestrator.include(
+    build_payment_proto(_on_payment_commit, _on_payment_reject),
+    publish_manifest=True,
+)
 
 
 # ---------------------------------------------------------------------------
@@ -435,6 +853,7 @@ class SubmitResponse(Model):
 
 HEALTH_AGENT_URL = "http://localhost:8001"
 EFFICIENCY_AGENT_URL = "http://localhost:8002"
+BROWSER_AGENT_URL = "http://localhost:8003"
 
 
 @orchestrator.on_rest_get("/health", HealthResponse)
@@ -542,8 +961,80 @@ async def handle_submit(ctx: Context, req: OrchestratorRequest) -> SubmitRespons
     except Exception as e:
         ctx.logger.exception(f"Backend POST failed: {e}")
 
-    if state.actions:
-        await _trigger_browser_actions(ctx, state)
+    # Trigger browser actions via HTTP concurrently
+    if state.actions and report_id:
+        summary = _build_report_summary(state)
+        all_findings = state.health_findings + state.efficiency_findings
+
+        # Create placeholder "in progress" action logs immediately
+        async with httpx.AsyncClient(timeout=10.0) as init_client:
+            for action in state.actions:
+                try:
+                    await init_client.post(
+                        f"{BACKEND_API_URL}/api/action-logs",
+                        json={
+                            "report_id": report_id,
+                            "action_type": action,
+                            "success": False,
+                            "full_output": "",
+                            "recording_url": "",
+                            "status": "in_progress",
+                        },
+                        headers={"X-Role": "manager"},
+                    )
+                except Exception:
+                    pass
+
+        async def _run_browser_action(action: str):
+            action_payload = BrowserActionRequest(
+                chat_session_id=state.chat_session_id,
+                action_type=action,
+                employee_name=state.employee_name,
+                employee_email=state.employee_email,
+                manager_email=state.manager_email,
+                report_summary=summary,
+                report_id=report_id,
+                findings_data=all_findings,
+                sheet_url=state.sheet_url,
+                training_doc_url=state.training_doc_url,
+            )
+            try:
+                async with httpx.AsyncClient(timeout=300.0) as client:
+                    resp = await client.post(
+                        f"{BROWSER_AGENT_URL}/execute",
+                        json=action_payload.model_dump(),
+                    )
+                if resp.status_code == 200:
+                    data = resp.json()
+                    ctx.logger.info(
+                        f"Browser action {action}: success={data.get('success')} "
+                        f"msg={data.get('message', '')[:100]}"
+                    )
+                    # Save result to database
+                    if report_id:
+                        try:
+                            async with httpx.AsyncClient(timeout=10.0) as db_client:
+                                await db_client.post(
+                                    f"{BACKEND_API_URL}/api/action-logs",
+                                    json={
+                                        "report_id": report_id,
+                                        "action_type": action,
+                                        "success": data.get("success", False),
+                                        "full_output": data.get("message", ""),
+                                        "recording_url": data.get("recording_url", ""),
+                                    },
+                                    headers={"X-Role": "manager"},
+                                )
+                        except Exception as db_err:
+                            ctx.logger.warning(f"Failed to save action log: {db_err}")
+                else:
+                    ctx.logger.warning(f"Browser agent returned {resp.status_code} for {action}")
+            except Exception as e:
+                ctx.logger.warning(f"Browser action {action} failed: {e}")
+
+        # Fire browser actions in the background — don't block the REST response
+        for a in state.actions:
+            asyncio.ensure_future(_run_browser_action(a))
 
     state_service.remove(session_id)
 
