@@ -138,6 +138,11 @@ export async function fetchTrainingSources(): Promise<TrainingSourceSummary[]> {
   return data;
 }
 
+export async function fetchTrashedTrainingSources(): Promise<TrainingSourceSummary[]> {
+  const { data } = await api.get("/api/training/trash");
+  return data;
+}
+
 export async function fetchTrainingSource(id: string): Promise<TrainingSource> {
   const { data } = await api.get(`/api/training/${id}`);
   return data;
@@ -152,6 +157,14 @@ export async function uploadTrainingFile(file: File): Promise<TrainingSource> {
     },
   });
   return data.source;
+}
+
+export async function trashTrainingSource(id: string): Promise<void> {
+  await api.post(`/api/training/${id}/trash`);
+}
+
+export async function restoreTrainingSource(id: string): Promise<void> {
+  await api.post(`/api/training/${id}/restore`);
 }
 
 export function getTrainingSourceFileUrl(id: string): string {

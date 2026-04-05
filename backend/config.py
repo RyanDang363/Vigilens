@@ -15,7 +15,7 @@ class Settings(BaseSettings):
     fetchai_seed_phrase: str = ""
     training_storage_dir: str = "./backend/storage/training"
 
-    model_config = {"env_file": str(_ENV_FILE)}
+    model_config = {"env_file": str(_ENV_FILE), "extra": "ignore"}
 
 
 @lru_cache

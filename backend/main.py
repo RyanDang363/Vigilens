@@ -3,6 +3,7 @@
 import logging
 import shutil
 import tempfile
+from datetime import datetime
 from pathlib import Path
 from uuid import uuid4
 
@@ -13,6 +14,7 @@ from fastapi.responses import FileResponse
 from sqlalchemy.orm import Session
 
 from backend.database import engine, get_db, Base
+from backend.config import get_settings
 from backend.models import Employee, Finding, Report, TrainingSource
 from backend.schemas import (
     EmployeeCreate,
@@ -27,6 +29,7 @@ from backend.schemas import (
 from backend.services.training_service import (
     create_training_source,
     infer_mime_type,
+    normalize_title,
     serialize_source,
     storage_path_for_source,
     summarize_source,
@@ -69,10 +72,130 @@ def _get_training_source_or_404(db: Session, source_id: str) -> TrainingSource:
     return source
 
 
+def _training_storage_dir() -> Path:
+    directory = Path(get_settings().training_storage_dir)
+    directory.mkdir(parents=True, exist_ok=True)
+    return directory
+
+
+def _training_trash_dir() -> Path:
+    directory = _training_storage_dir() / ".trash"
+    directory.mkdir(parents=True, exist_ok=True)
+    return directory
+
+
+def _filesystem_source_id(filename: str) -> str:
+    return f"fs::{filename}"
+
+
+def _filesystem_source_payload(path: Path) -> dict:
+    created_at = datetime.fromtimestamp(path.stat().st_mtime)
+    return {
+        "id": _filesystem_source_id(path.name),
+        "source_type": "upload",
+        "title": normalize_title(path.name),
+        "mime_type": infer_mime_type(path.name, None),
+        "owner_manager_id": "manager_demo",
+        "workspace_id": current_workspace_id(),
+        "raw_text": "",
+        "tags": [],
+        "version": 1,
+        "status": "uploaded",
+        "active_version": True,
+        "created_at": created_at,
+        "updated_at": created_at,
+        "last_indexed_at": None,
+        "google_file_id": "",
+        "source_url": "",
+        "chunks": [],
+        "rules": [],
+    }
+
+
+def _resolve_training_file(source_id: str, db: Session) -> tuple[dict, Path]:
+    if source_id.startswith("fs::"):
+        filename = source_id.removeprefix("fs::")
+        path = _training_storage_dir() / filename
+        if not path.exists():
+            raise HTTPException(status_code=404, detail="Stored file is missing")
+        return _filesystem_source_payload(path), path
+
+    source = _get_training_source_or_404(db, source_id)
+    if not source.storage_path:
+        raise HTTPException(status_code=404, detail="No stored file found for this source")
+    path = Path(source.storage_path)
+    if not path.exists():
+        raise HTTPException(status_code=404, detail="Stored file is missing")
+    return serialize_source(source), path
+
+
+def _move_to_trash(path: Path) -> Path:
+    target = _training_trash_dir() / path.name
+    if target.exists():
+        target = _training_trash_dir() / f"{uuid4()}-{path.name}"
+    shutil.move(str(path), str(target))
+    return target
+
+
+def _restore_from_trash(path: Path) -> Path:
+    target = _training_storage_dir() / path.name
+    if target.exists():
+        target = _training_storage_dir() / f"{uuid4()}-{path.name}"
+    shutil.move(str(path), str(target))
+    return target
+
+
 # --- Training Library ---
 
 @app.get("/api/training", response_model=list[TrainingSourceSummary])
 def list_training_sources(
+    db: Session = Depends(get_db),
+    manager_id: str = Depends(require_manager),
+):
+    all_sources = (
+        db.query(TrainingSource)
+        .filter(TrainingSource.owner_manager_id == manager_id)
+        .order_by(TrainingSource.created_at.desc())
+        .all()
+    )
+    sources = [
+        source
+        for source in all_sources
+        if not source.storage_path or Path(source.storage_path).parent != _training_trash_dir()
+    ]
+    items = [summarize_source(source) for source in sources]
+    referenced_names = {
+        Path(source.storage_path).name
+        for source in sources
+        if source.storage_path
+    }
+
+    for path in _training_storage_dir().iterdir():
+        if not path.is_file() or path.name in referenced_names:
+            continue
+        payload = _filesystem_source_payload(path)
+        items.append(
+            {
+                "id": payload["id"],
+                "source_type": payload["source_type"],
+                "title": payload["title"],
+                "mime_type": payload["mime_type"],
+                "tags": payload["tags"],
+                "workspace_id": payload["workspace_id"],
+                "version": payload["version"],
+                "status": payload["status"],
+                "active_version": payload["active_version"],
+                "created_at": payload["created_at"],
+                "last_indexed_at": payload["last_indexed_at"],
+            }
+        )
+
+    items.sort(key=lambda item: item["created_at"] or datetime.min, reverse=True)
+    return items
+
+
+@app.get("/api/training/trash", response_model=list[TrainingSourceSummary])
+def list_trashed_training_sources(
     db: Session = Depends(get_db),
     manager_id: str = Depends(require_manager),
 ):
@@ -82,7 +205,44 @@ def list_training_sources(
         .order_by(TrainingSource.created_at.desc())
         .all()
     )
-    return [summarize_source(source) for source in sources]
+
+    items: list[dict] = []
+    for source in sources:
+        if not source.storage_path:
+            continue
+        path = Path(source.storage_path)
+        if path.parent != _training_trash_dir():
+            continue
+        items.append(summarize_source(source))
+
+    referenced_names = {
+        Path(source.storage_path).name
+        for source in sources
+        if source.storage_path
+    }
+
+    for path in _training_trash_dir().iterdir():
+        if not path.is_file() or path.name in referenced_names:
+            continue
+        payload = _filesystem_source_payload(path)
+        items.append(
+            {
+                "id": payload["id"],
+                "source_type": payload["source_type"],
+                "title": payload["title"],
+                "mime_type": payload["mime_type"],
+                "tags": payload["tags"],
+                "workspace_id": payload["workspace_id"],
+                "version": payload["version"],
+                "status": payload["status"],
+                "active_version": payload["active_version"],
+                "created_at": payload["created_at"],
+                "last_indexed_at": payload["last_indexed_at"],
+            }
+        )
+
+    items.sort(key=lambda item: item["created_at"] or datetime.min, reverse=True)
+    return items
 
 
 @app.get("/api/training/{source_id}", response_model=TrainingSourceOut)
@@ -91,10 +251,10 @@ def get_training_source(
     db: Session = Depends(get_db),
     manager_id: str = Depends(require_manager),
 ):
-    source = _get_training_source_or_404(db, source_id)
-    if source.owner_manager_id != manager_id:
+    payload, _ = _resolve_training_file(source_id, db)
+    if payload["owner_manager_id"] != manager_id:
         raise HTTPException(status_code=403, detail="Manager access required")
-    return serialize_source(source)
+    return payload
 
 
 @app.get("/api/training/{source_id}/file")
@@ -103,22 +263,74 @@ def get_training_source_file(
     db: Session = Depends(get_db),
     manager_id: str = Depends(require_manager),
 ):
+    payload, path = _resolve_training_file(source_id, db)
+    if payload["owner_manager_id"] != manager_id:
+        raise HTTPException(status_code=403, detail="Manager access required")
+
+    return FileResponse(
+        path,
+        media_type=payload["mime_type"],
+        filename=path.name,
+        content_disposition_type="inline",
+    )
+
+
+@app.post("/api/training/{source_id}/trash")
+def trash_training_source(
+    source_id: str,
+    db: Session = Depends(get_db),
+    manager_id: str = Depends(require_manager),
+):
+    if source_id.startswith("fs::"):
+        filename = source_id.removeprefix("fs::")
+        path = _training_storage_dir() / filename
+        if not path.exists():
+            raise HTTPException(status_code=404, detail="Stored file is missing")
+        trashed = _move_to_trash(path)
+        return {"id": _filesystem_source_id(trashed.name), "message": "File moved to trash."}
+
     source = _get_training_source_or_404(db, source_id)
     if source.owner_manager_id != manager_id:
         raise HTTPException(status_code=403, detail="Manager access required")
     if not source.storage_path:
         raise HTTPException(status_code=404, detail="No stored file found for this source")
-
     path = Path(source.storage_path)
     if not path.exists():
         raise HTTPException(status_code=404, detail="Stored file is missing")
 
-    return FileResponse(
-        path,
-        media_type=source.mime_type,
-        filename=path.name,
-        content_disposition_type="inline",
-    )
+    trashed = _move_to_trash(path)
+    source.storage_path = str(trashed)
+    db.commit()
+    return {"id": source.id, "message": "File moved to trash."}
+
+
+@app.post("/api/training/{source_id}/restore")
+def restore_training_source(
+    source_id: str,
+    db: Session = Depends(get_db),
+    manager_id: str = Depends(require_manager),
+):
+    if source_id.startswith("fs::"):
+        filename = source_id.removeprefix("fs::")
+        path = _training_trash_dir() / filename
+        if not path.exists():
+            raise HTTPException(status_code=404, detail="Trashed file is missing")
+        restored = _restore_from_trash(path)
+        return {"id": _filesystem_source_id(restored.name), "message": "File restored."}
+
+    source = _get_training_source_or_404(db, source_id)
+    if source.owner_manager_id != manager_id:
+        raise HTTPException(status_code=403, detail="Manager access required")
+    if not source.storage_path:
+        raise HTTPException(status_code=404, detail="No stored file found for this source")
+    path = Path(source.storage_path)
+    if not path.exists():
+        raise HTTPException(status_code=404, detail="Trashed file is missing")
+
+    restored = _restore_from_trash(path)
+    source.storage_path = str(restored)
+    db.commit()
+    return {"id": source.id, "message": "File restored."}
 
 
 @app.post("/api/training/upload", response_model=TrainingUploadResponse)

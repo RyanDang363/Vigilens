@@ -1,9 +1,12 @@
 import { useEffect, useRef, useState, type ChangeEvent } from "react";
 import {
-  fetchTrainingSources,
+  fetchTrashedTrainingSources,
   fetchTrainingSource,
+  fetchTrainingSources,
   getApiErrorMessage,
   getTrainingSourceFileUrl,
+  restoreTrainingSource,
+  trashTrainingSource,
   uploadTrainingFile,
   type TrainingSource,
   type TrainingSourceSummary,
@@ -24,6 +27,7 @@ function viewerHeight(mimeType: string): string {
 
 export default function TrainingLibrary() {
   const [sources, setSources] = useState<TrainingSourceSummary[]>([]);
+  const [trashedSources, setTrashedSources] = useState<TrainingSourceSummary[]>([]);
   const [selectedId, setSelectedId] = useState("");
   const [selectedSource, setSelectedSource] = useState<TrainingSource | null>(null);
   const [loading, setLoading] = useState(true);
@@ -33,8 +37,12 @@ export default function TrainingLibrary() {
   const uploadInputRef = useRef<HTMLInputElement | null>(null);
 
   async function refreshSources(preferredSourceId?: string) {
-    const all = await fetchTrainingSources();
+    const [all, trashed] = await Promise.all([
+      fetchTrainingSources(),
+      fetchTrashedTrainingSources(),
+    ]);
     setSources(all);
+    setTrashedSources(trashed);
     const nextId = preferredSourceId ?? selectedId ?? "";
     const resolvedId = nextId && all.some((item) => item.id === nextId) ? nextId : "";
     setSelectedId(resolvedId);
@@ -73,7 +81,7 @@ export default function TrainingLibrary() {
       setMessage("");
       const source = await uploadTrainingFile(file);
       await refreshSources(source.id);
-      setMessage(`${file.name} uploaded successfully. Click any file on the left to view it here.`);
+      setMessage(`${file.name} uploaded successfully. Click a file below to view it in page.`);
       setMessageTone("success");
     } catch (error) {
       setMessage(getApiErrorMessage(error) || "Upload failed.");
@@ -81,6 +89,38 @@ export default function TrainingLibrary() {
     } finally {
       setBusyLabel("");
       event.target.value = "";
+    }
+  }
+
+  async function handleTrash(id: string, title: string) {
+    try {
+      setBusyLabel(`Moving ${title} to trash...`);
+      setMessage("");
+      await trashTrainingSource(id);
+      await refreshSources(selectedId === id ? "" : undefined);
+      setMessage(`${title} moved to trash.`);
+      setMessageTone("success");
+    } catch (error) {
+      setMessage(getApiErrorMessage(error) || "Could not move the file to trash.");
+      setMessageTone("error");
+    } finally {
+      setBusyLabel("");
+    }
+  }
+
+  async function handleRestore(id: string, title: string) {
+    try {
+      setBusyLabel(`Restoring ${title}...`);
+      setMessage("");
+      await restoreTrainingSource(id);
+      await refreshSources(id);
+      setMessage(`${title} restored from trash.`);
+      setMessageTone("success");
+    } catch (error) {
+      setMessage(getApiErrorMessage(error) || "Could not restore the file.");
+      setMessageTone("error");
+    } finally {
+      setBusyLabel("");
     }
   }
 
@@ -102,14 +142,14 @@ export default function TrainingLibrary() {
               Upload files and view them directly inside the page.
             </h1>
             <p className="mt-4 max-w-2xl text-sm leading-6 text-slate-600">
-              This page is now just a lightweight file library. Upload a PDF or text file,
-              then click it from the list to open it in the in-page viewer on the right.
+              Upload a file, open it directly in the browser, and move old files into trash
+              when you want to hide them without losing them.
             </p>
           </div>
 
           <div className="rounded-2xl border border-white/70 bg-white/85 p-4 text-sm text-slate-600 shadow-sm">
             <p className="font-semibold text-slate-900">Uploaded files</p>
-            <p className="mt-1">{sources.length} saved in this workspace</p>
+            <p className="mt-1">{sources.length} active and {trashedSources.length} in trash</p>
           </div>
         </div>
       </section>
@@ -131,14 +171,10 @@ export default function TrainingLibrary() {
 
       <section className="grid gap-6">
         <div className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
-          <div className="flex items-center justify-between gap-4">
-            <div>
-              <p className="text-xs font-semibold uppercase tracking-[0.22em] text-slate-500">
-                Upload
-              </p>
-              <h2 className="mt-2 text-xl font-semibold text-slate-900">Add a file</h2>
-            </div>
-          </div>
+          <p className="text-xs font-semibold uppercase tracking-[0.22em] text-slate-500">
+            Upload
+          </p>
+          <h2 className="mt-2 text-xl font-semibold text-slate-900">Add a file</h2>
 
           <input
             ref={uploadInputRef}
@@ -172,28 +208,29 @@ export default function TrainingLibrary() {
           </div>
 
           <div className="mt-5 grid gap-4">
-              {sources.map((source) => (
-                <div key={source.id} className="rounded-2xl border border-slate-200 bg-slate-50">
-                  <button
-                    type="button"
-                    onClick={() => setSelectedId((current) => (current === source.id ? "" : source.id))}
-                    className={`w-full rounded-2xl p-4 text-left transition ${
-                      selectedId === source.id
-                        ? "bg-slate-900 text-white shadow-sm"
-                        : "text-slate-700 hover:bg-white"
-                    }`}
-                  >
-                    <div className="flex items-center justify-between gap-4">
-                      <div>
-                        <p className="font-medium">{source.title}</p>
-                        <p
-                          className={`mt-1 text-xs ${
-                            selectedId === source.id ? "text-slate-300" : "text-slate-500"
-                          }`}
-                        >
-                          {formatSourceType(source.source_type)} • {source.mime_type}
-                        </p>
-                      </div>
+            {sources.map((source) => (
+              <div key={source.id} className="rounded-2xl border border-slate-200 bg-slate-50">
+                <button
+                  type="button"
+                  onClick={() => setSelectedId((current) => (current === source.id ? "" : source.id))}
+                  className={`w-full rounded-2xl p-4 text-left transition ${
+                    selectedId === source.id
+                      ? "bg-slate-900 text-white shadow-sm"
+                      : "text-slate-700 hover:bg-white"
+                  }`}
+                >
+                  <div className="flex items-center justify-between gap-4">
+                    <div>
+                      <p className="font-medium">{source.title}</p>
+                      <p
+                        className={`mt-1 text-xs ${
+                          selectedId === source.id ? "text-slate-300" : "text-slate-500"
+                        }`}
+                      >
+                        {formatSourceType(source.source_type)} | {source.mime_type}
+                      </p>
+                    </div>
+                    <div className="flex items-center gap-3">
                       <span
                         className={`text-xs font-medium ${
                           selectedId === source.id ? "text-slate-300" : "text-slate-500"
@@ -201,44 +238,102 @@ export default function TrainingLibrary() {
                       >
                         {selectedId === source.id ? "Hide viewer" : "View in page"}
                       </span>
+                      <button
+                        type="button"
+                        onClick={(event) => {
+                          event.stopPropagation();
+                          void handleTrash(source.id, source.title);
+                        }}
+                        className={`rounded-full px-3 py-1 text-xs font-semibold ${
+                          selectedId === source.id
+                            ? "border border-white/20 text-white hover:bg-white/10"
+                            : "border border-rose-200 text-rose-700 hover:bg-rose-50"
+                        }`}
+                      >
+                        Delete
+                      </button>
                     </div>
-                  </button>
+                  </div>
+                </button>
 
-                  {selectedId === source.id && selectedSource?.id === source.id && (
-                    <div className="border-t border-slate-200 bg-white p-4">
-                      <div className="mb-3">
-                        <p className="text-xs font-semibold uppercase tracking-[0.22em] text-slate-500">
-                          In-Page Viewer
-                        </p>
-                        <p className="mt-1 text-sm text-slate-600">
-                          {formatSourceType(selectedSource.source_type)} • {selectedSource.mime_type}
-                        </p>
+                {selectedId === source.id && selectedSource?.id === source.id && (
+                  <div className="border-t border-slate-200 bg-white p-4">
+                    <div className="mb-3">
+                      <p className="text-xs font-semibold uppercase tracking-[0.22em] text-slate-500">
+                        In-Page Viewer
+                      </p>
+                      <p className="mt-1 text-sm text-slate-600">
+                        {formatSourceType(selectedSource.source_type)} | {selectedSource.mime_type}
+                      </p>
+                    </div>
+
+                    {canPreviewInline(selectedSource) ? (
+                      <div className="overflow-hidden rounded-2xl border border-slate-200 bg-slate-50">
+                        <iframe
+                          title={`${selectedSource.title} preview`}
+                          src={fileUrl}
+                          className={`w-full bg-white ${viewerHeight(selectedSource.mime_type)}`}
+                        />
                       </div>
+                    ) : (
+                      <div className="rounded-2xl border border-dashed border-slate-300 p-6 text-sm text-slate-500">
+                        This file type does not support inline preview yet.
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+            ))}
 
-                      {canPreviewInline(selectedSource) ? (
-                        <div className="overflow-hidden rounded-2xl border border-slate-200 bg-slate-50">
-                          <iframe
-                            title={`${selectedSource.title} preview`}
-                            src={fileUrl}
-                            className={`w-full bg-white ${viewerHeight(selectedSource.mime_type)}`}
-                          />
-                        </div>
-                      ) : (
-                        <div className="rounded-2xl border border-dashed border-slate-300 p-6 text-sm text-slate-500">
-                          This file type does not support inline preview yet.
-                        </div>
-                      )}
-                    </div>
-                  )}
-                </div>
-              ))}
+            {sources.length === 0 && (
+              <div className="rounded-2xl border border-dashed border-slate-300 p-5 text-sm text-slate-500">
+                No files yet. Upload one and it will appear here.
+              </div>
+            )}
+          </div>
+        </section>
 
-              {sources.length === 0 && (
-                <div className="rounded-2xl border border-dashed border-slate-300 p-5 text-sm text-slate-500">
-                  No files yet. Upload one and it will appear here.
-                </div>
-              )}
+        <section className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
+          <div className="flex items-center justify-between gap-4">
+            <div>
+              <p className="text-xs font-semibold uppercase tracking-[0.22em] text-slate-500">
+                Trash
+              </p>
+              <h2 className="mt-2 text-xl font-semibold text-slate-900">Restore deleted files</h2>
             </div>
+            <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-700">
+              {trashedSources.length}
+            </span>
+          </div>
+
+          <div className="mt-5 grid gap-4">
+            {trashedSources.map((source) => (
+              <div
+                key={source.id}
+                className="flex items-center justify-between gap-4 rounded-2xl border border-slate-200 bg-slate-50 p-4"
+              >
+                <div>
+                  <p className="font-medium text-slate-900">{source.title}</p>
+                  <p className="mt-1 text-xs text-slate-500">
+                    {formatSourceType(source.source_type)} | {source.mime_type}
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => void handleRestore(source.id, source.title)}
+                  className="rounded-full border border-emerald-200 px-3 py-1 text-xs font-semibold text-emerald-700 hover:bg-emerald-50"
+                >
+                  Restore
+                </button>
+              </div>
+            ))}
+
+            {trashedSources.length === 0 && (
+              <div className="rounded-2xl border border-dashed border-slate-300 p-5 text-sm text-slate-500">
+                Deleted files will show up here so they can be restored later.
+              </div>
+            )}
+          </div>
         </section>
       </section>
     </div>
