@@ -131,7 +131,7 @@ POLICY_DB: dict[str, dict[str, dict]] = {
                 "official_url": "https://www.fda.gov/media/164194/download",
             },
             "reasoning_template": (
-                "Observations {obs_types} indicate raw-to-RTE cross-contamination "
+                "{observation_label} {obs_types} indicate raw-to-RTE cross-contamination "
                 "without visible sanitation between tasks."
             ),
             "assumptions": [],
@@ -149,7 +149,7 @@ POLICY_DB: dict[str, dict[str, dict]] = {
                 "official_url": "https://leginfo.legislature.ca.gov/faces/codes_displaySection.xhtml?lawCode=HSC&sectionNum=113986.",
             },
             "reasoning_template": (
-                "Observations {obs_types} indicate raw-to-RTE cross-contamination "
+                "{observation_label} {obs_types} indicate raw-to-RTE cross-contamination "
                 "without visible sanitation between tasks."
             ),
             "assumptions": ["surface was used for ready-to-eat food"],
@@ -170,7 +170,7 @@ POLICY_DB: dict[str, dict[str, dict]] = {
                 "official_url": "https://www.fda.gov/media/164194/download",
             },
             "reasoning_template": (
-                "Observations {obs_types} indicate handwashing was insufficient "
+                "{observation_label} {obs_types} indicate handwashing was insufficient "
                 "or skipped before food contact."
             ),
             "assumptions": [],
@@ -189,7 +189,7 @@ POLICY_DB: dict[str, dict[str, dict]] = {
                 "official_url": "https://leginfo.legislature.ca.gov/faces/codes_displaySection.xhtml?lawCode=HSC&sectionNum=113953.3",
             },
             "reasoning_template": (
-                "Observations {obs_types} indicate handwashing was insufficient "
+                "{observation_label} {obs_types} indicate handwashing was insufficient "
                 "or skipped before food contact."
             ),
             "assumptions": [],
@@ -212,7 +212,7 @@ POLICY_DB: dict[str, dict[str, dict]] = {
                 "official_url": "https://www.fda.gov/media/164194/download",
             },
             "reasoning_template": (
-                "Observations {obs_types} indicate gloves were not changed between "
+                "{observation_label} {obs_types} indicate gloves were not changed between "
                 "tasks or after a contamination event."
             ),
             "assumptions": [],
@@ -230,7 +230,7 @@ POLICY_DB: dict[str, dict[str, dict]] = {
                 "official_url": "https://www.fda.gov/media/164194/download",
             },
             "reasoning_template": (
-                "Observations {obs_types} indicate gloves were not changed between "
+                "{observation_label} {obs_types} indicate gloves were not changed between "
                 "tasks or after a contamination event."
             ),
             "assumptions": [],
@@ -252,7 +252,7 @@ POLICY_DB: dict[str, dict[str, dict]] = {
                 "official_url": "https://www.fda.gov/media/164194/download",
             },
             "reasoning_template": (
-                "Observations {obs_types} indicate bare-hand contact with "
+                "{observation_label} {obs_types} indicate bare-hand contact with "
                 "ready-to-eat food. FDA Food Code generally prohibits this "
                 "except in limited circumstances."
             ),
@@ -273,7 +273,7 @@ POLICY_DB: dict[str, dict[str, dict]] = {
                 "official_url": "https://leginfo.legislature.ca.gov/faces/codes_displaySection.xhtml?lawCode=HSC&sectionNum=113961.",
             },
             "reasoning_template": (
-                "Observations {obs_types} indicate bare-hand contact with "
+                "{observation_label} {obs_types} indicate bare-hand contact with "
                 "ready-to-eat food. California permits this in approved prep areas "
                 "if hands are washed per CalCode, but proper handwashing must be "
                 "confirmed."
@@ -295,7 +295,7 @@ POLICY_DB: dict[str, dict[str, dict]] = {
                 "official_url": "https://www.fda.gov/media/164194/download",
             },
             "reasoning_template": (
-                "Observations {obs_types} indicate a dropped or contaminated "
+                "{observation_label} {obs_types} indicate a dropped or contaminated "
                 "utensil was reused without proper washing or sanitation."
             ),
             "assumptions": [],
@@ -314,7 +314,7 @@ POLICY_DB: dict[str, dict[str, dict]] = {
                 "official_url": "https://leginfo.legislature.ca.gov/faces/codes_displaySection.xhtml?lawCode=HSC&sectionNum=114117.",
             },
             "reasoning_template": (
-                "Observations {obs_types} indicate a dropped or contaminated "
+                "{observation_label} {obs_types} indicate a dropped or contaminated "
                 "utensil was reused without proper washing or sanitation."
             ),
             "assumptions": [],
@@ -334,7 +334,7 @@ POLICY_DB: dict[str, dict[str, dict]] = {
                 "official_url": "https://www.fda.gov/media/164194/download",
             },
             "reasoning_template": (
-                "Observations {obs_types} indicate food that contacted the floor "
+                "{observation_label} {obs_types} indicate food that contacted the floor "
                 "or a contaminated surface was reused without discarding."
             ),
             "assumptions": [],
@@ -349,7 +349,7 @@ POLICY_DB: dict[str, dict[str, dict]] = {
                 "official_url": "https://leginfo.legislature.ca.gov/faces/codes_displaySection.xhtml?lawCode=HSC&sectionNum=113986.",
             },
             "reasoning_template": (
-                "Observations {obs_types} indicate food that contacted the floor "
+                "{observation_label} {obs_types} indicate food that contacted the floor "
                 "or a contaminated surface was reused without discarding."
             ),
             "assumptions": [],
@@ -371,7 +371,7 @@ POLICY_DB: dict[str, dict[str, dict]] = {
                 "official_url": "https://www.osha.gov/etools/young-workers-restaurant-safety/food-prep",
             },
             "reasoning_template": (
-                "Observations {obs_types} indicate a knife was directed toward "
+                "{observation_label} {obs_types} indicate a knife was directed toward "
                 "another person, creating an injury risk."
             ),
             "assumptions": [],
@@ -389,7 +389,7 @@ POLICY_DB: dict[str, dict[str, dict]] = {
                 "official_url": "https://www.osha.gov/etools/young-workers-restaurant-safety/food-prep",
             },
             "reasoning_template": (
-                "Observations {obs_types} indicate a knife was directed toward "
+                "{observation_label} {obs_types} indicate a knife was directed toward "
                 "another person, creating an injury risk."
             ),
             "assumptions": [],
@@ -408,7 +408,7 @@ POLICY_DB: dict[str, dict[str, dict]] = {
                 "official_url": "https://www.osha.gov/etools/young-workers-restaurant-safety/food-prep",
             },
             "reasoning_template": (
-                "Observations {obs_types} indicate a knife was placed near the "
+                "{observation_label} {obs_types} indicate a knife was placed near the "
                 "edge of the prep table, creating a fall/injury risk."
             ),
             "assumptions": [],
@@ -425,7 +425,7 @@ POLICY_DB: dict[str, dict[str, dict]] = {
                 "official_url": "https://www.osha.gov/etools/young-workers-restaurant-safety/food-prep",
             },
             "reasoning_template": (
-                "Observations {obs_types} indicate a knife was placed near the "
+                "{observation_label} {obs_types} indicate a knife was placed near the "
                 "edge of the prep table, creating a fall/injury risk."
             ),
             "assumptions": [],
@@ -443,7 +443,7 @@ UNKNOWN_POLICY: dict = {
         "short_rule": "Observation did not match a known policy rule",
         "official_url": "",
     },
-    "reasoning_template": "Observations {obs_types} did not match a known policy pattern.",
+    "reasoning_template": "{observation_label} {obs_types} did not match a known policy pattern.",
     "assumptions": ["manual review recommended"],
 }
 

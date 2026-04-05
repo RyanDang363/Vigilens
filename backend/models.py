@@ -8,6 +8,7 @@ class Employee(Base):
 
     id = Column(String, primary_key=True)
     name = Column(String, nullable=False)
+    email = Column(String, default="")
     role = Column(String, default="")
     station = Column(String, default="")
     start_date = Column(String, default="")

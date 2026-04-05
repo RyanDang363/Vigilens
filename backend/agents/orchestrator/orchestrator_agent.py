@@ -354,12 +354,12 @@ async def handle_browser_response(ctx: Context, sender: str, msg: BrowserActionR
 # and Stripe payment gating.
 # ---------------------------------------------------------------------------
 
-# Demo scenarios — each represents a different employee clip
+# Demo scenarios �?? each represents a different employee clip
 DEMO_SCENARIOS = {
     "maria": {
         "employee_id": "emp_1",
         "employee_name": "Maria Garcia",
-        "description": "Line cook at Prep Station A — cross contamination and phone use during prep",
+        "description": "Line cook at Prep Station A �?? cross contamination and phone use during prep",
         "health_events": [
             EventCandidate(
                 event_id="demo_h1",
@@ -394,7 +394,7 @@ DEMO_SCENARIOS = {
     "james": {
         "employee_id": "emp_2",
         "employee_name": "James Chen",
-        "description": "Sous chef at Grill Station — unsafe knife placement and extended chatting",
+        "description": "Sous chef at Grill Station �?? unsafe knife placement and extended chatting",
         "health_events": [
             EventCandidate(
                 event_id="demo_h3",
@@ -420,7 +420,7 @@ DEMO_SCENARIOS = {
     "sarah": {
         "employee_id": "emp_3",
         "employee_name": "Sarah Johnson",
-        "description": "Prep cook at Station B — glove misuse and dropped utensil reuse",
+        "description": "Prep cook at Station B �?? glove misuse and dropped utensil reuse",
         "health_events": [
             EventCandidate(
                 event_id="demo_h4",
@@ -512,7 +512,7 @@ def _format_rich_report(state: PipelineState) -> str:
     sev = state.highest_severity.upper()
 
     lines = [
-        f"SafeWatch Analysis Report",
+        f"Vigilens Analysis Report",
         f"========================",
         f"Employee: {state.employee_name}",
         f"Jurisdiction: {state.jurisdiction.upper()}",
@@ -561,7 +561,7 @@ def _format_rich_report(state: PipelineState) -> str:
                 lines.append(f"  Coaching: {coaching}")
 
     lines.append("")
-    lines.append("Report saved to SafeWatch dashboard.")
+    lines.append("Report saved to Vigilens dashboard.")
     lines.append("Actions triggered: email notification, Google Sheets log, training doc lookup, web research.")
 
     return "\n".join(lines)
@@ -604,30 +604,30 @@ def _clear_pay_state(ctx: Context, sender: str):
 
 
 GREETING_TEXT = (
-    "Welcome to SafeWatch — AI-powered workplace safety monitoring.\n\n"
+    "Welcome to Vigilens �?? AI-powered workplace safety monitoring.\n\n"
     "I coordinate a multi-agent system that analyzes workplace footage for:\n"
     "  - Health code violations (FDA Food Code, CalCode)\n"
     "  - Workplace safety hazards (OSHA)\n"
     "  - Efficiency issues (phone use, distractions)\n\n"
     "My agents:\n"
-    "  Health Agent — evaluates food safety and hygiene violations\n"
-    "  Efficiency Agent — detects productivity and focus issues\n"
-    "  Browser Agent — sends emails, logs to Google Sheets, researches regulations\n\n"
+    "  Health Agent �?? evaluates food safety and hygiene violations\n"
+    "  Efficiency Agent �?? detects productivity and focus issues\n"
+    "  Browser Agent �?? sends emails, logs to Google Sheets, researches regulations\n\n"
     "Available demo scenarios:\n"
-    "  1. \"Analyze Maria\" — cross contamination + phone use (high severity)\n"
-    "  2. \"Analyze James\" — unsafe knife placement + chatting (medium)\n"
-    "  3. \"Analyze Sarah\" — glove misuse + dropped utensil reuse (critical)\n\n"
+    "  1. \"Analyze Maria\" �?? cross contamination + phone use (high severity)\n"
+    "  2. \"Analyze James\" �?? unsafe knife placement + chatting (medium)\n"
+    "  3. \"Analyze Sarah\" �?? glove misuse + dropped utensil reuse (critical)\n\n"
     "Try: \"Run analysis for Maria in California\" or just \"analyze Sarah\""
 )
 
 STATUS_TEXT = (
-    "SafeWatch System Status\n"
+    "Vigilens System Status\n"
     "=======================\n"
     "Orchestrator: ONLINE (port 8004)\n"
-    "Health Agent: ONLINE (port 8001) — FDA/CalCode policy engine\n"
-    "Efficiency Agent: ONLINE (port 8002) — duration-based threshold engine\n"
-    "Browser Agent: ONLINE (port 8003) — email, sheets, web research\n"
-    "Backend API: ONLINE (port 8000) — dashboard & data store\n\n"
+    "Health Agent: ONLINE (port 8001) �?? FDA/CalCode policy engine\n"
+    "Efficiency Agent: ONLINE (port 8002) �?? duration-based threshold engine\n"
+    "Browser Agent: ONLINE (port 8003) �?? email, sheets, web research\n"
+    "Backend API: ONLINE (port 8000) �?? dashboard & data store\n\n"
     "Capabilities:\n"
     "  - Video event analysis via TwelveLabs\n"
     "  - Multi-agent health + efficiency evaluation\n"
@@ -698,7 +698,7 @@ async def handle_chat(ctx: Context, sender: str, msg: ChatMessage):
                 recipient=str(ctx.agent.address),
                 deadline_seconds=300,
                 reference=str(ctx.session),
-                description=f"Pay ${STRIPE_AMOUNT_CENTS / 100:.2f} for SafeWatch analysis — {scenario['employee_name']}",
+                description=f"Pay ${STRIPE_AMOUNT_CENTS / 100:.2f} for Vigilens analysis �?? {scenario['employee_name']}",
                 metadata={"stripe": pending_stripe, "service": "safewatch_report"},
             )
             await ctx.send(sender, req)
@@ -707,7 +707,7 @@ async def handle_chat(ctx: Context, sender: str, msg: ChatMessage):
             ))
             return
 
-        description = f"SafeWatch safety analysis for {scenario['employee_name']}"
+        description = f"Vigilens safety analysis for {scenario['employee_name']}"
         checkout = await asyncio.to_thread(
             create_checkout_session,
             user_address=sender,
@@ -730,7 +730,7 @@ async def handle_chat(ctx: Context, sender: str, msg: ChatMessage):
             recipient=str(ctx.agent.address),
             deadline_seconds=300,
             reference=str(ctx.session),
-            description=f"Pay ${STRIPE_AMOUNT_CENTS / 100:.2f} for SafeWatch analysis — {scenario['employee_name']}",
+            description=f"Pay ${STRIPE_AMOUNT_CENTS / 100:.2f} for Vigilens analysis �?? {scenario['employee_name']}",
             metadata={"stripe": checkout, "service": "safewatch_report"},
         )
         await ctx.send(sender, req)
@@ -743,7 +743,7 @@ async def handle_chat(ctx: Context, sender: str, msg: ChatMessage):
 
     # --- No Stripe: run pipeline directly ---
     await ctx.send(sender, _make_chat(
-        f"Running SafeWatch analysis for {scenario['employee_name']}...\n"
+        f"Running Vigilens analysis for {scenario['employee_name']}...\n"
         f"Jurisdiction: {jurisdiction.upper()} | Strictness: {strictness.upper()}\n"
         "Dispatching to Health Agent + Efficiency Agent..."
     ))
@@ -803,9 +803,9 @@ async def _on_payment_commit(ctx: Context, sender: str, msg: CommitPayment):
 
     scenario = DEMO_SCENARIOS.get(scenario_key, DEMO_SCENARIOS["maria"])
 
-    ctx.logger.info(f"Payment verified for {sender} — running {scenario_key} pipeline")
+    ctx.logger.info(f"Payment verified for {sender} �?? running {scenario_key} pipeline")
     await ctx.send(sender, _make_chat(
-        f"Payment confirmed! Running full SafeWatch analysis for {scenario['employee_name']}...\n"
+        f"Payment confirmed! Running full Vigilens analysis for {scenario['employee_name']}...\n"
         "Dispatching to Health Agent + Efficiency Agent + Browser Agent..."
     ))
 
@@ -1032,7 +1032,7 @@ async def handle_submit(ctx: Context, req: OrchestratorRequest) -> SubmitRespons
             except Exception as e:
                 ctx.logger.warning(f"Browser action {action} failed: {e}")
 
-        # Fire browser actions in the background — don't block the REST response
+        # Fire browser actions in the background �?? don't block the REST response
         for a in state.actions:
             asyncio.ensure_future(_run_browser_action(a))
 

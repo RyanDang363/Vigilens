@@ -13,7 +13,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from sqlalchemy.orm import Session
 
-from backend.database import engine, get_db, Base
+from backend.database import engine, get_db, Base, ensure_sqlite_schema
 from backend.config import describe_twelvelabs_config_for_logs, get_settings
 from backend.models import BrowserActionLog, Employee, Finding, Report, TrainingSource
 from backend.schemas import (
@@ -42,8 +42,9 @@ from backend.services.twelvelabs_service import (
 
 logger = logging.getLogger(__name__)
 
-# Create tables
+# Create tables + migrate existing SQLite DBs
 Base.metadata.create_all(bind=engine)
+ensure_sqlite_schema()
 
 app = FastAPI(title="Workplace Safety Dashboard API")
 
@@ -396,6 +397,7 @@ def list_employees(db: Session = Depends(get_db)):
         result.append(EmployeeOut(
             id=emp.id,
             name=emp.name,
+            email=emp.email or "",
             role=emp.role,
             station=emp.station,
             start_date=emp.start_date,
@@ -426,6 +428,7 @@ def get_employee(employee_id: str, db: Session = Depends(get_db)):
     return EmployeeOut(
         id=emp.id,
         name=emp.name,
+        email=emp.email or "",
         role=emp.role,
         station=emp.station,
         start_date=emp.start_date,
@@ -447,6 +450,7 @@ def create_employee(data: EmployeeCreate, db: Session = Depends(get_db)):
     return EmployeeOut(
         id=emp.id,
         name=emp.name,
+        email=emp.email or "",
         role=emp.role,
         station=emp.station,
         start_date=emp.start_date,
@@ -729,7 +733,7 @@ from fastapi.responses import RedirectResponse
 from backend.services.google_sheets import (
     get_oauth_login_url,
     handle_oauth_callback,
-    create_safewatch_sheet,
+    create_vigilens_sheet,
     append_findings_to_sheet,
     get_account,
 )
@@ -770,7 +774,7 @@ def google_callback(
 
     # Auto-create the sheet if one doesn't exist
     if not account.sheet_id:
-        create_safewatch_sheet(account, db)
+        create_vigilens_sheet(account, db)
 
     # Redirect back to the frontend settings page
     return RedirectResponse(url="http://localhost:5173/settings?google=connected")
@@ -781,12 +785,12 @@ def create_sheet(
     db: Session = Depends(get_db),
     manager_id: str = Depends(require_manager),
 ):
-    """Create (or recreate) a SafeWatch spreadsheet on the manager's Google account."""
+    """Create (or recreate) a Vigilens spreadsheet on the manager's Google account."""
     account = get_account(manager_id, db)
     if not account:
         raise HTTPException(status_code=400, detail="Google account not connected")
 
-    result = create_safewatch_sheet(account, db)
+    result = create_vigilens_sheet(account, db)
     return result
 
 

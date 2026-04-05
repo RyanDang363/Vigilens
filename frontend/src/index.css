@@ -29,7 +29,7 @@ main {
 }
 
 /* Severity left-border accent for cards */
-.severity-accent-low { border-left: 3px solid #9ca3af; }
+.severity-accent-low { border-left: 3px solid #34d399; }
 .severity-accent-medium { border-left: 3px solid #f59e0b; }
 .severity-accent-high { border-left: 3px solid #f97316; }
 .severity-accent-critical { border-left: 3px solid #ef4444; }

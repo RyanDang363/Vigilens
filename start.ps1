@@ -6,7 +6,7 @@ Get-Process -Name "python" -ErrorAction SilentlyContinue | Stop-Process -Force
 Get-Process -Name "node" -ErrorAction SilentlyContinue | Stop-Process -Force
 Start-Sleep -Seconds 2
 
-Write-Host "Starting SafeWatch..." -ForegroundColor Cyan
+Write-Host "Starting Vigilens..." -ForegroundColor Cyan
 
 # Backend API
 Start-Process powershell -ArgumentList "-NoExit", "-Command", "cd '$PWD'; .\venv\Scripts\python -m uvicorn backend.main:app --port 8000 --reload"

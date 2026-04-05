@@ -3,7 +3,7 @@ Google OAuth + Sheets API service.
 
 Handles:
 1. OAuth flow (login URL, callback, token storage)
-2. Creating a SafeWatch spreadsheet on the manager's Google account
+2. Creating a Vigilens spreadsheet on the manager's Google account
 3. Appending finding rows to the sheet
 """
 
@@ -130,14 +130,14 @@ def _get_credentials(account: GoogleAccount) -> Credentials:
     )
 
 
-def create_safewatch_sheet(account: GoogleAccount, db: Session) -> dict:
-    """Create a new 'SafeWatch Findings' spreadsheet and store its ID."""
+def create_vigilens_sheet(account: GoogleAccount, db: Session) -> dict:
+    """Create a new 'Vigilens Findings' spreadsheet and store its ID."""
     creds = _get_credentials(account)
     service = build("sheets", "v4", credentials=creds)
 
     spreadsheet = service.spreadsheets().create(
         body={
-            "properties": {"title": "SafeWatch — Findings Log"},
+            "properties": {"title": "Vigilens — Findings Log"},
             "sheets": [{
                 "properties": {"title": "Findings"},
                 "data": [{
@@ -169,10 +169,10 @@ def append_findings_to_sheet(
     employee_name: str,
     findings: list[dict],
 ) -> int:
-    """Append finding rows to the manager's SafeWatch sheet.
+    """Append finding rows to the manager's Vigilens sheet.
     Returns the number of rows appended."""
     if not account.sheet_id:
-        raise ValueError("No sheet created yet. Call create_safewatch_sheet first.")
+        raise ValueError("No sheet created yet. Call create_vigilens_sheet first.")
 
     creds = _get_credentials(account)
     service = build("sheets", "v4", credentials=creds)

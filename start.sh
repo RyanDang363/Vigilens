@@ -15,7 +15,7 @@ if [ ! -f "$PYTHON" ]; then
   exit 1
 fi
 
-echo "Starting SafeWatch..."
+echo "Starting Vigilens..."
 
 # Backend API
 $PYTHON -m uvicorn backend.main:app --port 8000 --reload &

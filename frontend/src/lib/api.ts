@@ -20,6 +20,7 @@ const api = axios.create({
 export interface Employee {
   id: string;
   name: string;
+  email: string;
   role: string;
   station: string;
   start_date: string;
@@ -143,6 +144,7 @@ export async function fetchEmployee(id: string): Promise<Employee> {
 export interface EmployeeCreatePayload {
   id: string;
   name: string;
+  email?: string;
   role?: string;
   station?: string;
   start_date?: string;
@@ -154,6 +156,7 @@ export async function createEmployee(
   const { data } = await api.post("/api/employees", {
     id: payload.id.trim(),
     name: payload.name.trim(),
+    email: payload.email?.trim() ?? "",
     role: payload.role?.trim() ?? "",
     station: payload.station?.trim() ?? "",
     start_date: payload.start_date?.trim() ?? "",

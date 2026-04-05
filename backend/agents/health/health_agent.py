@@ -36,6 +36,7 @@ from backend.agents.models.messages import (
 from backend.agents.health.policy_resolver import resolve_policy
 from backend.agents.health.severity import assign_severity, SEVERITY_LEVELS
 from backend.agents.health.coach import get_coaching_text
+from backend.agents.observation_reasoning import format_reasoning_from_template
 
 
 health_agent = Agent(
@@ -69,7 +70,10 @@ def evaluate_events(event_candidates, jurisdiction):
             concluded_type, event.corrective_action_observed
         )
 
-        reasoning = policy.get("reasoning_template", "").format(obs_types=obs_types)
+        reasoning = format_reasoning_from_template(
+            policy.get("reasoning_template", ""),
+            obs_types,
+        )
         ref = policy.get("reference", {})
 
         findings.append(HealthFinding(
