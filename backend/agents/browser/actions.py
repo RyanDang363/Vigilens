@@ -119,7 +119,7 @@ async def log_to_sheets(request: BrowserActionRequest):
     """
     # If we have a report_id, use the backend endpoint directly
     if request.report_id:
-        async with httpx.AsyncClient() as http:
+        async with httpx.AsyncClient(timeout=60.0) as http:
             resp = await http.post(
                 "http://localhost:8000/api/google/log-findings",
                 params={"report_id": request.report_id},
@@ -132,7 +132,7 @@ async def log_to_sheets(request: BrowserActionRequest):
                 return f"Sheet API error: {resp.text}"
 
     # Fallback: post findings data directly to a new endpoint
-    async with httpx.AsyncClient() as http:
+    async with httpx.AsyncClient(timeout=60.0) as http:
         resp = await http.post(
             "http://localhost:8000/api/google/log-findings-direct",
             json={
@@ -165,7 +165,7 @@ async def get_training_docs(request: BrowserActionRequest):
     ]
     topics = list(dict.fromkeys(finding_types))  # deduplicate, preserve order
 
-    async with httpx.AsyncClient() as http:
+    async with httpx.AsyncClient(timeout=60.0) as http:
         # Get all training sources
         resp = await http.get(
             "http://localhost:8000/api/training",

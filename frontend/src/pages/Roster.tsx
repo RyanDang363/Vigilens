@@ -1,6 +1,11 @@
 import { useEffect, useState, useMemo, type FormEvent } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 import {
+  Users, ClipboardList, AlertTriangle, AlertOctagon,
+  User, Siren, Tag,
+  Shield, Zap, Home, Heart, type LucideIcon,
+} from "lucide-react";
+import {
   createEmployee,
   fetchEmployees,
   fetchAllFindings,
@@ -39,11 +44,11 @@ const CLASS_LABEL: Record<string, string> = {
   house_rule: "House Rule",
 };
 
-const CLASS_ICON: Record<string, string> = {
-  code_backed_food_safety: "🏥",
-  workplace_safety_rule: "⚠️",
-  efficiency: "⚡",
-  house_rule: "🏠",
+const CLASS_ICON: Record<string, LucideIcon> = {
+  code_backed_food_safety: Heart,
+  workplace_safety_rule: Shield,
+  efficiency: Zap,
+  house_rule: Home,
 };
 
 /** Native <select> uses OS chrome (inset / gradient) unless appearance is reset. */
@@ -69,18 +74,18 @@ const SEV_ORDER: Record<string, number> = { low: 0, medium: 1, high: 2, critical
 function StatCard({
   label,
   value,
-  icon,
+  icon: Icon,
   color,
 }: {
   label: string;
   value: number;
-  icon: string;
+  icon: LucideIcon;
   color: string;
 }) {
   return (
     <div className={`rounded-xl p-4 ${color} border`}>
       <div className="flex items-center gap-2 mb-1">
-        <span className="text-lg">{icon}</span>
+        <Icon className="w-4.5 h-4.5 opacity-80" />
         <span className="text-xs font-medium uppercase tracking-wide opacity-70">
           {label}
         </span>
@@ -111,9 +116,7 @@ function OffenseCard({ group }: { group: OffenseGroup }) {
         className="w-full text-left p-5 grid grid-cols-1 gap-4 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center sm:gap-6 cursor-pointer"
       >
         <div className="flex items-center gap-3 min-w-0">
-          <span className="text-2xl shrink-0">
-            {CLASS_ICON[group.findingClass] || "📋"}
-          </span>
+          {(() => { const Icon = CLASS_ICON[group.findingClass] || ClipboardList; return <Icon className="w-6 h-6 shrink-0 opacity-70" />; })()}
           <div className="min-w-0">
             <h2 className="text-lg font-semibold text-gray-900">
               {formatType(group.concludedType)}
@@ -211,7 +214,7 @@ function OffenseCard({ group }: { group: OffenseGroup }) {
 
           <div className="px-5 py-4 bg-gradient-to-r from-gray-50 to-blue-50/30 text-sm text-gray-600">
             <p className="font-semibold text-gray-700 mb-1.5 flex items-center gap-1.5">
-              <span className="text-base">💡</span> Infraction recorded:
+              <AlertTriangle className="w-4 h-4 text-amber-500" /> Infraction recorded:
             </p>
             <p className="italic leading-relaxed">
               {group.findings[0]?.reasoning
@@ -411,25 +414,25 @@ export default function Roster() {
         <StatCard
           label="Employees"
           value={stats.totalEmployees}
-          icon="👥"
+          icon={Users}
           color="bg-blue-50 text-blue-700 border-blue-200"
         />
         <StatCard
           label="Total Infractions"
           value={stats.totalFindings}
-          icon="📋"
+          icon={ClipboardList}
           color="bg-violet-50 text-violet-700 border-violet-200"
         />
         <StatCard
           label="Critical"
           value={stats.criticalCount}
-          icon="🔴"
+          icon={AlertOctagon}
           color="bg-red-50 text-red-700 border-red-200"
         />
         <StatCard
           label="High Severity"
           value={stats.highCount}
-          icon="🟠"
+          icon={AlertTriangle}
           color="bg-orange-50 text-orange-700 border-orange-200"
         />
       </div>
@@ -448,21 +451,21 @@ export default function Roster() {
         <div className="flex flex-wrap items-center gap-2">
           {(
             [
-              ["employees", "By Employee", "👤"],
-              ["offenses", "By Infraction", "🚨"],
-              ["positions", "By Position", "🏷️"],
-            ] as [ViewMode, string, string][]
-          ).map(([mode, label, icon]) => (
+              ["employees", "By Employee", User],
+              ["offenses", "By Infraction", Siren],
+              ["positions", "By Position", Tag],
+            ] as [ViewMode, string, LucideIcon][]
+          ).map(([mode, label, Icon]) => (
             <button
               key={mode}
               onClick={() => setViewMode(mode)}
               className={`px-4 py-2 rounded-lg text-sm font-medium transition-all cursor-pointer flex items-center gap-2 ${
                 viewMode === mode
-                  ? "bg-gradient-to-r from-blue-600 to-violet-600 text-white shadow-md shadow-blue-200"
+                  ? "bg-gradient-to-r from-indigo-600 to-violet-600 text-white shadow-md shadow-indigo-200"
                   : "text-gray-600 hover:bg-gray-100"
               }`}
             >
-              <span>{icon}</span>
+              <Icon className="w-4 h-4" />
               {label}
             </button>
           ))}

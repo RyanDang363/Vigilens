@@ -27,21 +27,11 @@ from uagents_core.contrib.protocols.chat import (
     TextContent,
     chat_protocol_spec,
 )
-from uagents_core.contrib.protocols.payment import (
-    CommitPayment,
-    CompletePayment,
-    Funds,
-    RejectPayment,
-    RequestPayment,
-)
-
 from backend.agents.models.config import (
     ORCHESTRATOR_SEED,
     HEALTH_AGENT_ADDRESS,
     EFFICIENCY_AGENT_ADDRESS,
     BROWSER_AGENT_ADDRESS,
-    STRIPE_AMOUNT_CENTS,
-    STRIPE_SECRET_KEY,
 )
 from backend.agents.models.messages import (
     BrowserActionRequest,
@@ -55,11 +45,6 @@ from backend.agents.models.messages import (
     OrchestratorRequest,
 )
 from backend.agents.orchestrator.state import PipelineState, state_service
-from backend.agents.orchestrator.stripe_payments import (
-    create_checkout_session,
-    verify_checkout_paid,
-)
-from backend.agents.orchestrator.payment_proto import build_payment_proto
 
 
 BACKEND_API_URL = "http://localhost:8000"
@@ -350,8 +335,7 @@ async def handle_browser_response(ctx: Context, sender: str, msg: BrowserActionR
 
 # ---------------------------------------------------------------------------
 # Chat protocol -- interactive demo via ASI One / Agentverse
-# Supports intent detection, parameter extraction, multiple scenarios,
-# and Stripe payment gating.
+# Supports intent detection, parameter extraction, multiple scenarios.
 # ---------------------------------------------------------------------------
 
 # Demo scenarios �?? each represents a different employee clip
@@ -543,18 +527,6 @@ def _make_end_chat(text: str) -> ChatMessage:
     )
 
 
-def _load_pay_state(ctx: Context, sender: str) -> dict:
-    return ctx.storage.get(f"pay:{sender}") or {}
-
-
-def _save_pay_state(ctx: Context, sender: str, state: dict):
-    ctx.storage.set(f"pay:{sender}", state)
-
-
-def _clear_pay_state(ctx: Context, sender: str):
-    ctx.storage.set(f"pay:{sender}", {})
-
-
 GREETING_TEXT = (
     "Welcome to Vigilens �?? AI-powered workplace safety monitoring.\n\n"
     "I coordinate a multi-agent system that analyzes workplace footage for:\n"
@@ -586,7 +558,6 @@ STATUS_TEXT = (
     "  - Automated email reports (Browser Use agentmail)\n"
     "  - Google Sheets logging (OAuth + Sheets API)\n"
     "  - Online regulation research (Browser Use)\n"
-    "  - Stripe payment integration\n"
     "  - Real-time dashboard at localhost:5173"
 )
 
@@ -630,60 +601,6 @@ async def handle_chat(ctx: Context, sender: str, msg: ChatMessage):
 
     scenario = DEMO_SCENARIOS[scenario_key]
 
-    # --- Stripe payment gate (if configured) ---
-    pay_state = _load_pay_state(ctx, sender)
-    awaiting_payment = bool(pay_state.get("awaiting_payment"))
-    pending_stripe = pay_state.get("pending_stripe")
-
-    if STRIPE_SECRET_KEY:
-        if awaiting_payment and pending_stripe:
-            req = RequestPayment(
-                accepted_funds=[
-                    Funds(currency="USD", amount=f"{STRIPE_AMOUNT_CENTS / 100:.2f}", payment_method="stripe")
-                ],
-                recipient=str(ctx.agent.address),
-                deadline_seconds=300,
-                reference=str(ctx.session),
-                description=f"Pay ${STRIPE_AMOUNT_CENTS / 100:.2f} for Vigilens analysis �?? {scenario['employee_name']}",
-                metadata={"stripe": pending_stripe, "service": "safewatch_report"},
-            )
-            await ctx.send(sender, req)
-            await ctx.send(sender, _make_chat(llm_response or "Payment is still pending. Complete the checkout above."))
-            return
-
-        description = f"Vigilens safety analysis for {scenario['employee_name']}"
-        checkout = await asyncio.to_thread(
-            create_checkout_session,
-            user_address=sender,
-            chat_session_id=str(ctx.session),
-            description=description,
-        )
-
-        _save_pay_state(ctx, sender, {
-            "awaiting_payment": True,
-            "pending_stripe": checkout,
-            "scenario_key": scenario_key,
-            "jurisdiction": jurisdiction,
-            "strictness": strictness,
-        })
-
-        req = RequestPayment(
-            accepted_funds=[
-                Funds(currency="USD", amount=f"{STRIPE_AMOUNT_CENTS / 100:.2f}", payment_method="stripe")
-            ],
-            recipient=str(ctx.agent.address),
-            deadline_seconds=300,
-            reference=str(ctx.session),
-            description=f"Pay ${STRIPE_AMOUNT_CENTS / 100:.2f} for Vigilens analysis �?? {scenario['employee_name']}",
-            metadata={"stripe": checkout, "service": "safewatch_report"},
-        )
-        await ctx.send(sender, req)
-        await ctx.send(sender, _make_chat(
-            llm_response or f"Preparing analysis for {scenario['employee_name']}. Complete the payment above."
-        ))
-        return
-
-    # --- No Stripe: run pipeline directly ---
     await ctx.send(sender, _make_chat(
         f"Running Vigilens analysis for {scenario['employee_name']}...\n"
         f"Jurisdiction: {jurisdiction.upper()} | Strictness: {strictness.upper()}\n"
@@ -714,64 +631,12 @@ async def _run_analysis(
     await handle_request(ctx, sender, request)
 
 
-# ---------------------------------------------------------------------------
-# Stripe payment handlers
-# ---------------------------------------------------------------------------
-
-async def _on_payment_commit(ctx: Context, sender: str, msg: CommitPayment):
-    ctx.logger.info(f"Payment commit from {sender}: tx={msg.transaction_id}")
-
-    if msg.funds.payment_method != "stripe" or not msg.transaction_id:
-        await ctx.send(sender, RejectPayment(
-            reason="Unsupported payment method (expected Stripe)."
-        ))
-        return
-
-    paid = await asyncio.to_thread(verify_checkout_paid, msg.transaction_id)
-    if not paid:
-        await ctx.send(sender, RejectPayment(
-            reason="Stripe payment not completed yet. Please finish checkout."
-        ))
-        return
-
-    await ctx.send(sender, CompletePayment(transaction_id=msg.transaction_id))
-
-    # Recover saved parameters
-    pay_state = _load_pay_state(ctx, sender)
-    scenario_key = pay_state.get("scenario_key", "maria")
-    jurisdiction = pay_state.get("jurisdiction", "california")
-    strictness = pay_state.get("strictness", "medium")
-    _clear_pay_state(ctx, sender)
-
-    scenario = DEMO_SCENARIOS.get(scenario_key, DEMO_SCENARIOS["maria"])
-
-    ctx.logger.info(f"Payment verified for {sender} �?? running {scenario_key} pipeline")
-    await ctx.send(sender, _make_chat(
-        f"Payment confirmed! Running full Vigilens analysis for {scenario['employee_name']}...\n"
-        "Dispatching to Health Agent + Efficiency Agent + Browser Agent..."
-    ))
-
-    await _run_analysis(ctx, sender, scenario_key, jurisdiction, strictness)
-
-
-async def _on_payment_reject(ctx: Context, sender: str, msg: RejectPayment):
-    ctx.logger.info(f"Payment rejected by {sender}: {msg.reason}")
-    _clear_pay_state(ctx, sender)
-    await ctx.send(sender, _make_chat(
-        f"Payment cancelled. {msg.reason or ''}\n\nSend me a message anytime to try again.".strip()
-    ))
-
-
 @chat_proto.on_message(ChatAcknowledgement)
 async def handle_ack(ctx: Context, sender: str, msg: ChatAcknowledgement):
     ctx.logger.info(f"ACK from {sender}")
 
 
 orchestrator.include(chat_proto, publish_manifest=True)
-orchestrator.include(
-    build_payment_proto(_on_payment_commit, _on_payment_reject),
-    publish_manifest=True,
-)
 
 
 # ---------------------------------------------------------------------------

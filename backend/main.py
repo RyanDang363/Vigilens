@@ -13,7 +13,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from sqlalchemy.orm import Session
 
-from backend.database import engine, get_db, Base, ensure_sqlite_schema
+from backend.database import engine, get_db, Base, ensure_sqlite_schema, SessionLocal
 from backend.config import describe_twelvelabs_config_for_logs, get_settings
 from backend.models import BrowserActionLog, Employee, Finding, Report, TrainingSource
 from backend.schemas import (
@@ -62,6 +62,27 @@ def _log_twelvelabs_startup() -> None:
     logger.info("Startup: %s", describe_twelvelabs_config_for_logs())
 
 
+@app.on_event("startup")
+def _backfill_training_raw_text() -> None:
+    """Backfill raw_text for any training sources that have a file but empty text."""
+    db = SessionLocal()
+    try:
+        sources = db.query(TrainingSource).filter(
+            TrainingSource.raw_text == "",
+            TrainingSource.storage_path != "",
+        ).all()
+        for src in sources:
+            p = Path(src.storage_path)
+            if p.exists():
+                text = _extract_text_from_path(p, src.mime_type)
+                if text:
+                    src.raw_text = text
+                    logger.info(f"Backfilled raw_text for {src.id} ({len(text)} chars)")
+        db.commit()
+    finally:
+        db.close()
+
+
 def require_manager(x_role: str = Header(default="manager")) -> str:
     if x_role != "manager":
         raise HTTPException(status_code=403, detail="Manager access required")
@@ -95,16 +116,31 @@ def _filesystem_source_id(filename: str) -> str:
     return f"fs::{filename}"
 
 
+def _extract_text_from_path(path: Path, mime_type: str | None) -> str:
+    """Extract text content from a file for training doc search."""
+    try:
+        if mime_type and mime_type.startswith("text/"):
+            return path.read_text(encoding="utf-8", errors="replace")
+        if mime_type == "application/pdf":
+            import pdfplumber
+            with pdfplumber.open(path) as pdf:
+                return "\n\n".join(page.extract_text() or "" for page in pdf.pages)
+    except Exception:
+        pass
+    return ""
+
+
 def _filesystem_source_payload(path: Path) -> dict:
     created_at = datetime.fromtimestamp(path.stat().st_mtime)
+    mime_type = infer_mime_type(path.name, None)
     return {
         "id": _filesystem_source_id(path.name),
         "source_type": "upload",
         "title": normalize_title(path.name),
-        "mime_type": infer_mime_type(path.name, None),
+        "mime_type": mime_type,
         "owner_manager_id": "manager_demo",
         "workspace_id": current_workspace_id(),
-        "raw_text": "",
+        "raw_text": _extract_text_from_path(path, mime_type),
         "tags": [],
         "version": 1,
         "status": "uploaded",
@@ -354,6 +390,20 @@ def upload_training_file(
     with storage_path.open("wb") as destination:
         shutil.copyfileobj(file.file, destination)
 
+    # Extract text content from the uploaded file
+    raw_text = ""
+    try:
+        if mime_type and mime_type.startswith("text/"):
+            raw_text = storage_path.read_text(encoding="utf-8", errors="replace")
+        elif mime_type == "application/pdf":
+            import pdfplumber
+            with pdfplumber.open(storage_path) as pdf:
+                raw_text = "\n\n".join(
+                    page.extract_text() or "" for page in pdf.pages
+                )
+    except Exception:
+        raw_text = ""
+
     source = create_training_source(
         db,
         source_type="upload",
@@ -361,7 +411,7 @@ def upload_training_file(
         mime_type=mime_type,
         owner_manager_id=manager_id,
         workspace_id=current_workspace_id(),
-        raw_text="",
+        raw_text=raw_text,
         storage_path=str(storage_path),
     )
     source.id = source_id
@@ -687,6 +737,7 @@ async def analyze_video(
         "clip_id": result.asset_id,
         "employee_id": emp.id,
         "employee_name": emp.name,
+        "employee_email": "evanbnguyen@gmail.com",
         "jurisdiction": jurisdiction,
         "health_events": health_events,
         "efficiency_events": efficiency_events,
