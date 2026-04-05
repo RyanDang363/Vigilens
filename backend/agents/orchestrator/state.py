@@ -58,5 +58,9 @@ class PipelineStateService:
     def remove(self, session_id: str):
         self._store.pop(session_id, None)
 
+    def take(self, session_id: str) -> PipelineState | None:
+        """Remove and return the state atomically. Only one caller gets it."""
+        return self._store.pop(session_id, None)
+
 
 state_service = PipelineStateService()

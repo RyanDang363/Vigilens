@@ -1,6 +1,11 @@
 """
-Browser actions — each function takes a Browser Use client and a
-BrowserActionRequest and performs one browser task.
+Browser actions — each function uses Browser Use Cloud SDK to perform
+a real browser task.
+
+- send_report_email: uses agentmail (built-in email per session) to send
+  the report to the employee/manager. No Gmail login needed.
+- log_to_sheets: navigates to a Google Sheet and appends finding rows.
+- get_training_docs: navigates to a training doc and extracts relevant sections.
 """
 
 from __future__ import annotations
@@ -53,26 +58,33 @@ def _format_sheet_rows(request: BrowserActionRequest) -> str:
 
 
 async def send_report_email(client, session_id: str, request: BrowserActionRequest):
-    """Compose and send an email via Gmail."""
+    """Send a report email using Browser Use agentmail.
+
+    Agentmail is enabled by default — each session gets a unique email address.
+    The agent uses its built-in email to compose and send to the recipient.
+    No Gmail login required.
+    """
     email_body = _format_email_body(request)
     to = request.employee_email or request.manager_email or ""
     cc = request.manager_email if request.employee_email and request.manager_email else ""
 
-    task = f"""Go to Gmail (mail.google.com). Compose a new email.
+    task = f"""You have a built-in email address (agentmail). Use it to send an email.
+
+Compose and send an email with the following details:
 To: {to}
 {"CC: " + cc if cc else ""}
 Subject: Workplace Safety & Performance Report - {request.employee_name}
 
-Paste the following as the email body (plain text):
-
+Body:
 {email_body}
 
-Send the email."""
+Send this email using your agentmail capabilities. Confirm when sent."""
 
     result = await client.run(
         task=task,
         model="gemini-3-flash",
         session_id=session_id,
+        agentmail=True,
     )
     return result
 
@@ -83,6 +95,10 @@ async def log_to_sheets(client, session_id: str, request: BrowserActionRequest):
 
     task = f"""Go to this Google Sheet: {request.sheet_url}
 
+If you are not logged in or see a Google sign-in page, stop and report
+"NOT_LOGGED_IN" as your output. Do NOT attempt to log in.
+
+If you can see the spreadsheet:
 For each of the following items, append a new row at the bottom of the sheet.
 The columns are: Employee Name, Finding Type, Severity, Status, Timestamp, Policy Citation, Coaching Recommendation
 
