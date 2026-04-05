@@ -448,57 +448,9 @@ DEMO_SCENARIOS = {
     },
 }
 
-# --- Intent detection ---
+# --- LLM-powered intent detection (ASI-1) with keyword fallback ---
 
-_GREETING_WORDS = ("hello", "hi", "hey", "what can you do", "who are you", "help", "start")
-_ANALYZE_WORDS = ("analyze", "run", "report", "check", "scan", "review", "evaluate", "inspect")
-_STATUS_WORDS = ("status", "agents", "how many", "system")
-
-
-def _detect_intent(text: str) -> str:
-    """Detect user intent from message text."""
-    t = text.lower().strip()
-    if any(t.startswith(g) or t == g for g in _GREETING_WORDS):
-        return "greeting"
-    if any(w in t for w in _ANALYZE_WORDS):
-        return "analyze"
-    if any(w in t for w in _STATUS_WORDS):
-        return "status"
-    return "analyze"  # default: assume they want to run an analysis
-
-
-def _extract_scenario(text: str) -> str | None:
-    """Extract which employee scenario the user is asking about."""
-    t = text.lower()
-    for key in DEMO_SCENARIOS:
-        if key in t:
-            return key
-    # Check full names
-    for key, scenario in DEMO_SCENARIOS.items():
-        name_parts = scenario["employee_name"].lower().split()
-        if any(part in t for part in name_parts):
-            return key
-    return None
-
-
-def _extract_jurisdiction(text: str) -> str:
-    """Extract jurisdiction from user text."""
-    t = text.lower()
-    if "california" in t or "ca" in t:
-        return "california"
-    if "federal" in t or "fda" in t:
-        return "federal"
-    return "california"  # default for demo
-
-
-def _extract_strictness(text: str) -> str:
-    """Extract strictness level from user text."""
-    t = text.lower()
-    if "strict" in t or "high" in t:
-        return "high"
-    if "lenient" in t or "low" in t:
-        return "low"
-    return "medium"
+from backend.agents.orchestrator.llm import parse_chat_message
 
 
 # --- Rich response formatting ---
@@ -603,42 +555,6 @@ def _clear_pay_state(ctx: Context, sender: str):
     ctx.storage.set(f"pay:{sender}", {})
 
 
-GREETING_TEXT = (
-    "Welcome to SafeWatch — AI-powered workplace safety monitoring.\n\n"
-    "I coordinate a multi-agent system that analyzes workplace footage for:\n"
-    "  - Health code violations (FDA Food Code, CalCode)\n"
-    "  - Workplace safety hazards (OSHA)\n"
-    "  - Efficiency issues (phone use, distractions)\n\n"
-    "My agents:\n"
-    "  Health Agent — evaluates food safety and hygiene violations\n"
-    "  Efficiency Agent — detects productivity and focus issues\n"
-    "  Browser Agent — sends emails, logs to Google Sheets, researches regulations\n\n"
-    "Available demo scenarios:\n"
-    "  1. \"Analyze Maria\" — cross contamination + phone use (high severity)\n"
-    "  2. \"Analyze James\" — unsafe knife placement + chatting (medium)\n"
-    "  3. \"Analyze Sarah\" — glove misuse + dropped utensil reuse (critical)\n\n"
-    "Try: \"Run analysis for Maria in California\" or just \"analyze Sarah\""
-)
-
-STATUS_TEXT = (
-    "SafeWatch System Status\n"
-    "=======================\n"
-    "Orchestrator: ONLINE (port 8004)\n"
-    "Health Agent: ONLINE (port 8001) — FDA/CalCode policy engine\n"
-    "Efficiency Agent: ONLINE (port 8002) — duration-based threshold engine\n"
-    "Browser Agent: ONLINE (port 8003) — email, sheets, web research\n"
-    "Backend API: ONLINE (port 8000) — dashboard & data store\n\n"
-    "Capabilities:\n"
-    "  - Video event analysis via TwelveLabs\n"
-    "  - Multi-agent health + efficiency evaluation\n"
-    "  - Automated email reports (Browser Use agentmail)\n"
-    "  - Google Sheets logging (OAuth + Sheets API)\n"
-    "  - Online regulation research (Browser Use)\n"
-    "  - Stripe payment integration\n"
-    "  - Real-time dashboard at localhost:5173"
-)
-
-
 @chat_proto.on_message(ChatMessage)
 async def handle_chat(ctx: Context, sender: str, msg: ChatMessage):
     await ctx.send(
@@ -655,34 +571,28 @@ async def handle_chat(ctx: Context, sender: str, msg: ChatMessage):
 
     ctx.logger.info(f"Chat from {sender}: {user_text[:100]}")
 
-    intent = _detect_intent(user_text)
-    ctx.logger.info(f"Intent: {intent}")
+    # Use ASI-1 LLM to understand the user's message
+    parsed = await parse_chat_message(user_text)
+    intent = parsed.get("intent", "analyze")
+    llm_response = parsed.get("response", "")
+    params = parsed.get("params", {})
 
-    # --- Greeting / Help ---
-    if intent == "greeting":
-        await ctx.send(sender, _make_chat(GREETING_TEXT))
+    ctx.logger.info(f"LLM parsed: intent={intent} params={params}")
+
+    # --- Greeting / Help / Chat ---
+    if intent in ("greeting", "chat", "status"):
+        await ctx.send(sender, _make_chat(llm_response))
         return
 
-    # --- System Status ---
-    if intent == "status":
-        await ctx.send(sender, _make_chat(STATUS_TEXT))
-        return
+    # --- Analysis request ---
+    scenario_key = params.get("employee", "maria")
+    jurisdiction = params.get("jurisdiction", "california")
+    strictness = params.get("strictness", "medium")
 
-    # --- Analysis request: extract parameters ---
-    scenario_key = _extract_scenario(user_text)
-    jurisdiction = _extract_jurisdiction(user_text)
-    strictness = _extract_strictness(user_text)
-
-    if not scenario_key:
-        # Default to Maria if no specific employee mentioned
+    if scenario_key not in DEMO_SCENARIOS:
         scenario_key = "maria"
 
     scenario = DEMO_SCENARIOS[scenario_key]
-
-    ctx.logger.info(
-        f"Extracted params: scenario={scenario_key} "
-        f"jurisdiction={jurisdiction} strictness={strictness}"
-    )
 
     # --- Stripe payment gate (if configured) ---
     pay_state = _load_pay_state(ctx, sender)
@@ -702,9 +612,7 @@ async def handle_chat(ctx: Context, sender: str, msg: ChatMessage):
                 metadata={"stripe": pending_stripe, "service": "safewatch_report"},
             )
             await ctx.send(sender, req)
-            await ctx.send(sender, _make_chat(
-                "Payment is still pending. Complete the checkout above to receive your report."
-            ))
+            await ctx.send(sender, _make_chat(llm_response or "Payment is still pending. Complete the checkout above."))
             return
 
         description = f"SafeWatch safety analysis for {scenario['employee_name']}"
@@ -735,17 +643,13 @@ async def handle_chat(ctx: Context, sender: str, msg: ChatMessage):
         )
         await ctx.send(sender, req)
         await ctx.send(sender, _make_chat(
-            f"Preparing analysis for {scenario['employee_name']}.\n"
-            f"Jurisdiction: {jurisdiction.upper()} | Strictness: {strictness.upper()}\n\n"
-            "Complete the payment above to generate your report."
+            llm_response or f"Preparing analysis for {scenario['employee_name']}. Complete the payment above."
         ))
         return
 
     # --- No Stripe: run pipeline directly ---
     await ctx.send(sender, _make_chat(
-        f"Running SafeWatch analysis for {scenario['employee_name']}...\n"
-        f"Jurisdiction: {jurisdiction.upper()} | Strictness: {strictness.upper()}\n"
-        "Dispatching to Health Agent + Efficiency Agent..."
+        llm_response or f"Running SafeWatch analysis for {scenario['employee_name']}..."
     ))
 
     await _run_analysis(ctx, sender, scenario_key, jurisdiction, strictness)

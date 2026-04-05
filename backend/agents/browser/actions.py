@@ -151,20 +151,19 @@ async def log_to_sheets(request: BrowserActionRequest):
 async def get_training_docs(request: BrowserActionRequest):
     """Query the local training library for docs relevant to the findings.
 
-    Fetches all training sources from the backend, then searches their
-    raw_text for mentions of the finding topics. Returns matched excerpts.
+    Uses ASI-1 to semantically match training documents to finding topics
+    and extract the most relevant excerpts.
     No browser needed — these are local files uploaded by the manager.
     """
+    import asyncio
+    import os
+    from openai import OpenAI
+
     finding_types = [
         f.get("concluded_type", "").replace("_", " ")
         for f in request.findings_data
     ]
     topics = list(dict.fromkeys(finding_types))  # deduplicate, preserve order
-    keywords = set()
-    for t in topics:
-        keywords.update(t.lower().split())
-    # Remove generic words
-    keywords -= {"of", "the", "a", "an", "and", "or", "to", "in", "on", "for"}
 
     async with httpx.AsyncClient() as http:
         # Get all training sources
@@ -179,57 +178,69 @@ async def get_training_docs(request: BrowserActionRequest):
         if not sources:
             return "No training documents uploaded. Upload docs on the Training page."
 
-        matches = []
+        # Collect all document texts
+        docs = []
         for src in sources:
-            # Fetch the full source to get raw_text
             detail_resp = await http.get(
                 f"http://localhost:8000/api/training/{src['id']}",
                 headers={"X-Role": "manager"},
             )
             if detail_resp.status_code != 200:
                 continue
-
             detail = detail_resp.json()
             raw_text = detail.get("raw_text", "")
-            if not raw_text:
-                continue
-
-            # Search for keyword matches in the text
-            text_lower = raw_text.lower()
-            matched_keywords = [kw for kw in keywords if kw in text_lower]
-            if not matched_keywords:
-                continue
-
-            # Extract relevant paragraphs (ones containing keywords)
-            paragraphs = raw_text.split("\n\n")
-            relevant = []
-            for para in paragraphs:
-                para_lower = para.lower()
-                if any(kw in para_lower for kw in matched_keywords):
-                    relevant.append(para.strip())
-
-            if relevant:
-                matches.append({
-                    "source": detail.get("title", src["id"]),
-                    "matched_topics": matched_keywords,
-                    "excerpts": relevant[:5],  # cap at 5 excerpts per source
+            if raw_text:
+                docs.append({
+                    "title": detail.get("title", src["id"]),
+                    "text": raw_text,
                 })
 
-    if not matches:
+        if not docs:
+            return "No training documents with content found."
+
+        # Build a combined context of all docs (truncate each to avoid token limits)
+        doc_context = ""
+        for i, doc in enumerate(docs):
+            truncated = doc["text"][:3000]
+            doc_context += f"\n\n--- Document {i+1}: {doc['title']} ---\n{truncated}"
+
+        prompt = (
+            f"You are analyzing workplace training documents for a food safety monitoring system.\n\n"
+            f"The following violations/topics were detected:\n"
+            f"{chr(10).join(f'- {t}' for t in topics)}\n\n"
+            f"Here are the available training documents:\n{doc_context}\n\n"
+            f"For each topic, find the most relevant excerpts from the documents above. "
+            f"Return your response in this format:\n"
+            f"--- [Document Title] (relevant to: [topic]) ---\n"
+            f"[relevant excerpt from the document]\n\n"
+            f"If no documents are relevant to a topic, say so. Be concise — return only "
+            f"the most directly relevant paragraphs or sentences, not the entire document."
+        )
+
+        client = OpenAI(
+            api_key=os.getenv("ASI_ONE_API_KEY", ""),
+            base_url="https://api.asi1.ai/v1",
+        )
+        response = await asyncio.to_thread(
+            client.chat.completions.create,
+            model="asi1",
+            temperature=0.2,
+            max_tokens=1000,
+            messages=[
+                {"role": "system", "content": "You extract relevant excerpts from training documents based on detected workplace violations."},
+                {"role": "user", "content": prompt},
+            ],
+        )
+
+        result_text = response.choices[0].message.content or ""
+
+    if not result_text.strip():
         return (
             f"No relevant training content found for topics: {', '.join(topics)}. "
             "Consider uploading training materials on the Training page."
         )
 
-    # Format the output
-    lines = [f"Found relevant training content for: {', '.join(topics)}\n"]
-    for m in matches:
-        lines.append(f"--- {m['source']} (matched: {', '.join(m['matched_topics'])}) ---")
-        for excerpt in m["excerpts"]:
-            lines.append(excerpt)
-        lines.append("")
-
-    return "\n".join(lines)
+    return f"Found relevant training content for: {', '.join(topics)}\n\n{result_text}"
 
 
 async def research_violations(client, session_id: str, request: BrowserActionRequest):
@@ -264,39 +275,33 @@ async def research_violations(client, session_id: str, request: BrowserActionReq
 
     findings_text = "\n".join(finding_details)
 
-    task = f"""An employee named {request.employee_name} received the following
-workplace safety findings during a shift review:
+    # Pick the top 2 most severe findings to research (avoid timeout)
+    sorted_findings = sorted(
+        finding_details,
+        key=lambda d: {"critical": 4, "high": 3, "medium": 2, "low": 1}.get(
+            d.split("severity: ")[1].split(",")[0] if "severity: " in d else "low", 0
+        ),
+        reverse=True,
+    )
+    focused = "\n".join(sorted_findings[:2])
 
-{findings_text}
+    task = f"""An employee named {request.employee_name} had these workplace safety findings:
 
-You have a real web browser. Use it to do the following — don't just read
-search result snippets, actually click through and navigate the sites:
+{focused}
 
-TASK 1 — Find the official regulation text:
-- Go to https://www.fda.gov/food/fda-food-code/food-code-2022 and navigate
-  to find the specific sections cited in the findings above (e.g. 3-302.11,
-  2-301.14). Click into the relevant chapter, scroll to the section, and
-  quote the actual regulation text.
-- If an OSHA standard is cited, go to https://www.osha.gov/laws-regs/regulations/standardnumber
-  and navigate to the specific standard.
+Do TWO things using your browser:
 
-TASK 2 — Find training videos:
-- Go to https://www.youtube.com and search for training videos related to
-  each violation. For example search "food safety cross contamination training"
-  or "proper handwashing technique food service". For each violation, find
-  1-2 relevant training videos and note their title and URL.
+1. Go to https://www.youtube.com and search for a training video for each
+   finding (e.g. search "cross contamination food safety training").
+   For each finding, get the title and URL of the top relevant video.
 
-TASK 3 — Check real inspection enforcement:
-- Go to Google and search for real health inspection cases related to these
-  violations (e.g. "restaurant fined cross contamination health inspection").
-  Find 1-2 real examples of consequences (fines, closures) to show why
-  these violations matter.
+2. Go to https://www.fda.gov/food/fda-food-code/food-code-2022 and find
+   the specific section cited in the finding. Quote the regulation text.
 
-Return a structured summary for each finding with:
-- The exact regulation text you found on the official site
-- The URL of the page you found it on
-- Training video titles and YouTube URLs
-- A real-world example of consequences for this type of violation"""
+Return a structured markdown summary with:
+- Finding name and severity
+- The YouTube training video title and URL
+- The official regulation text and source URL"""
 
     result = await client.run(
         task=task,

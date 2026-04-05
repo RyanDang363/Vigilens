@@ -49,7 +49,7 @@ def create_checkout_session(
     )
 
     session = stripe.checkout.Session.create(
-        ui_mode="embedded_page",
+        ui_mode="embedded",
         redirect_on_completion="if_required",
         payment_method_types=["card"],
         mode="payment",
