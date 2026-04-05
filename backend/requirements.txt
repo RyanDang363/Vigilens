@@ -7,3 +7,5 @@ pydantic[email]
 pydantic-settings
 aiosqlite
 twelvelabs
+uagents>=0.22.8
+uagents-core>=0.3.8
