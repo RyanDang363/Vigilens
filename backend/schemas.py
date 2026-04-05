@@ -100,3 +100,49 @@ class EmployeeOut(BaseModel):
 
     class Config:
         from_attributes = True
+
+
+# --- Training ---
+
+
+class TrainingSourceBase(BaseModel):
+    id: str
+    source_type: str
+    title: str
+    mime_type: str
+    owner_manager_id: str
+    workspace_id: str
+    raw_text: str
+    tags: list[str] = []
+    version: int
+    status: str
+    active_version: bool
+    created_at: datetime | None
+    updated_at: datetime | None
+    last_indexed_at: datetime | None = None
+    google_file_id: str = ""
+    source_url: str = ""
+
+
+class TrainingSourceOut(TrainingSourceBase):
+    chunks: list[dict] = []
+    rules: list[dict] = []
+
+
+class TrainingSourceSummary(BaseModel):
+    id: str
+    source_type: str
+    title: str
+    mime_type: str
+    tags: list[str] = []
+    workspace_id: str
+    version: int
+    status: str
+    active_version: bool
+    created_at: datetime | None
+    last_indexed_at: datetime | None = None
+
+
+class TrainingUploadResponse(BaseModel):
+    source: TrainingSourceOut
+    message: str

@@ -1,5 +1,5 @@
 """
-Orchestrator Agent â€” the coordinator of the multi-agent pipeline.
+Orchestrator Agent — the coordinator of the multi-agent pipeline.
 
 Flow:
 1. Receives an OrchestratorRequest (via chat or REST) with observations
@@ -74,7 +74,7 @@ def _max_severity(*severities: str) -> str:
 def _build_report_summary(state: PipelineState) -> str:
     total = len(state.health_findings) + len(state.efficiency_findings)
     lines = [
-        f"Report for {state.employee_name} â€” clip {state.clip_id}",
+        f"Report for {state.employee_name} — clip {state.clip_id}",
         f"Jurisdiction: {state.jurisdiction}",
         f"Total findings: {total}",
         f"  Health (code-backed): {state.health_code_backed}",
@@ -223,7 +223,7 @@ async def on_startup(ctx: Context):
 
 
 # ---------------------------------------------------------------------------
-# Handle OrchestratorRequest â€” kick off the pipeline
+# Handle OrchestratorRequest — kick off the pipeline
 # ---------------------------------------------------------------------------
 
 @orchestrator.on_message(OrchestratorRequest)
@@ -351,7 +351,7 @@ async def handle_browser_response(ctx: Context, sender: str, msg: BrowserActionR
 
 
 # ---------------------------------------------------------------------------
-# Chat protocol â€” allows triggering the pipeline from Agentverse chat
+# Chat protocol — allows triggering the pipeline from Agentverse chat
 # with a demo using mock observations
 # ---------------------------------------------------------------------------
 

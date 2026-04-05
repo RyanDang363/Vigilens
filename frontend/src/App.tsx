@@ -2,6 +2,7 @@ import { BrowserRouter, Routes, Route, Link } from "react-router-dom";
 import Roster from "./pages/Roster";
 import EmployeeDetail from "./pages/EmployeeDetail";
 import ReportDetail from "./pages/ReportDetail";
+import TrainingLibrary from "./pages/TrainingLibrary";
 
 function App() {
   return (
@@ -18,12 +19,19 @@ function App() {
             >
               Employees
             </Link>
+            <Link
+              to="/training"
+              className="text-sm text-gray-600 hover:text-gray-900"
+            >
+              Training
+            </Link>
           </div>
         </nav>
 
         <main className="max-w-6xl mx-auto px-6 py-8">
           <Routes>
             <Route path="/" element={<Roster />} />
+            <Route path="/training" element={<TrainingLibrary />} />
             <Route path="/employees/:id" element={<EmployeeDetail />} />
             <Route path="/reports/:id" element={<ReportDetail />} />
           </Routes>

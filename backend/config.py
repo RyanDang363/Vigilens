@@ -6,12 +6,11 @@ class Settings(BaseSettings):
     app_name: str = "Workspace Safety Monitor"
     database_url: str = "sqlite+aiosqlite:///./app.db"
     twelvelabs_api_key: str = ""
-    google_client_id: str = ""
-    google_client_secret: str = ""
     secret_key: str = "change-me-in-production"
     fetchai_seed_phrase: str = ""
+    training_storage_dir: str = "./backend/storage/training"
 
-    model_config = {"env_file": ".env"}
+    model_config = {"env_file": ".env", "extra": "ignore"}
 
 
 @lru_cache

@@ -2,19 +2,36 @@
 
 from uuid import uuid4
 
-from fastapi import FastAPI, Depends, HTTPException
+from fastapi import (
+    FastAPI,
+    Depends,
+    File,
+    Header,
+    HTTPException,
+    UploadFile,
+)
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import FileResponse
 from sqlalchemy.orm import Session
 
 from backend.database import engine, get_db, Base
-from backend.models import Employee, Report, Finding
+from backend.models import Employee, Finding, Report, TrainingSource
 from backend.schemas import (
     EmployeeCreate,
     EmployeeOut,
-    FindingOut,
     ReportCreate,
     ReportOut,
     ReportSummary,
+    TrainingSourceOut,
+    TrainingSourceSummary,
+    TrainingUploadResponse,
+)
+from backend.services.training_service import (
+    create_training_source,
+    infer_mime_type,
+    serialize_source,
+    storage_path_for_source,
+    summarize_source,
 )
 
 # Create tables
@@ -30,6 +47,21 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+def require_manager(x_role: str = Header(default="manager")) -> str:
+    if x_role != "manager":
+        raise HTTPException(status_code=403, detail="Manager access required")
+    return "manager_demo"
+
+
+def current_workspace_id() -> str:
+    return "workspace_demo"
+
+
+def _get_training_source_or_404(db: Session, source_id: str) -> TrainingSource:
+    source = db.query(TrainingSource).filter(TrainingSource.id == source_id).first()
+    if not source:
+        raise HTTPException(status_code=404, detail="Training source not found")
+    return source
 
 # --- Employees ---
 
@@ -178,3 +210,104 @@ def create_report(data: ReportCreate, db: Session = Depends(get_db)):
     db.commit()
     db.refresh(report)
     return report
+
+
+# --- Training ---
+
+@app.get("/api/training", response_model=list[TrainingSourceSummary])
+def list_training_sources(
+    db: Session = Depends(get_db),
+    manager_id: str = Depends(require_manager),
+):
+    workspace_id = current_workspace_id()
+    sources = (
+        db.query(TrainingSource)
+        .filter(
+            TrainingSource.owner_manager_id == manager_id,
+            TrainingSource.workspace_id == workspace_id,
+        )
+        .order_by(TrainingSource.created_at.desc())
+        .all()
+    )
+    return [summarize_source(source) for source in sources]
+
+
+@app.get("/api/training/{source_id}", response_model=TrainingSourceOut)
+def get_training_source(
+    source_id: str,
+    db: Session = Depends(get_db),
+    manager_id: str = Depends(require_manager),
+):
+    workspace_id = current_workspace_id()
+    source = _get_training_source_or_404(db, source_id)
+    if source.owner_manager_id != manager_id or source.workspace_id != workspace_id:
+        raise HTTPException(status_code=403, detail="Training source is outside your workspace.")
+    return serialize_source(source)
+
+
+@app.get("/api/training/{source_id}/file")
+def get_training_source_file(
+    source_id: str,
+    db: Session = Depends(get_db),
+    manager_id: str = Depends(require_manager),
+):
+    workspace_id = current_workspace_id()
+    source = _get_training_source_or_404(db, source_id)
+    if source.owner_manager_id != manager_id or source.workspace_id != workspace_id:
+        raise HTTPException(status_code=403, detail="Training source is outside your workspace.")
+    if source.source_type != "upload" or not source.storage_path:
+        raise HTTPException(status_code=404, detail="Original file preview is only available for uploaded sources.")
+
+    from pathlib import Path
+
+    file_path = Path(source.storage_path)
+    if not file_path.exists():
+        raise HTTPException(status_code=404, detail="Stored training file could not be found.")
+
+    filename = f"{source.title}{file_path.suffix}"
+    return FileResponse(
+        path=file_path,
+        media_type=source.mime_type,
+        filename=filename,
+        content_disposition_type="inline",
+    )
+
+
+@app.post("/api/training/upload", response_model=TrainingUploadResponse)
+async def upload_training_source(
+    file: UploadFile = File(...),
+    db: Session = Depends(get_db),
+    manager_id: str = Depends(require_manager),
+):
+    workspace_id = current_workspace_id()
+    mime_type = infer_mime_type(file.filename or "upload.bin", file.content_type)
+    allowed_types = {
+        "application/pdf",
+        "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        "text/plain",
+        "text/markdown",
+    }
+    if mime_type not in allowed_types:
+        raise HTTPException(status_code=400, detail="Unsupported file type. Use PDF, DOCX, TXT, or Markdown.")
+
+    temp_id = str(uuid4())
+    path = storage_path_for_source(temp_id, file.filename or "upload.bin")
+    contents = await file.read()
+    path.write_bytes(contents)
+
+    source = create_training_source(
+        db,
+        source_type="upload",
+        title=file.filename or "Uploaded training file",
+        mime_type=mime_type,
+        owner_manager_id=manager_id,
+        workspace_id=workspace_id,
+        raw_text="",
+        storage_path=str(path),
+    )
+    db.commit()
+    db.refresh(source)
+    return {
+        "source": serialize_source(source),
+        "message": "File uploaded successfully.",
+    }
