@@ -7,7 +7,7 @@ from pathlib import Path
 from uuid import uuid4
 
 import httpx
-from fastapi import FastAPI, Depends, File, Form, HTTPException, UploadFile
+from fastapi import FastAPI, Depends, File, Form, Header, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from sqlalchemy.orm import Session
@@ -67,6 +67,92 @@ def _get_training_source_or_404(db: Session, source_id: str) -> TrainingSource:
     if not source:
         raise HTTPException(status_code=404, detail="Training source not found")
     return source
+
+
+# --- Training Library ---
+
+@app.get("/api/training", response_model=list[TrainingSourceSummary])
+def list_training_sources(
+    db: Session = Depends(get_db),
+    manager_id: str = Depends(require_manager),
+):
+    sources = (
+        db.query(TrainingSource)
+        .filter(TrainingSource.owner_manager_id == manager_id)
+        .order_by(TrainingSource.created_at.desc())
+        .all()
+    )
+    return [summarize_source(source) for source in sources]
+
+
+@app.get("/api/training/{source_id}", response_model=TrainingSourceOut)
+def get_training_source(
+    source_id: str,
+    db: Session = Depends(get_db),
+    manager_id: str = Depends(require_manager),
+):
+    source = _get_training_source_or_404(db, source_id)
+    if source.owner_manager_id != manager_id:
+        raise HTTPException(status_code=403, detail="Manager access required")
+    return serialize_source(source)
+
+
+@app.get("/api/training/{source_id}/file")
+def get_training_source_file(
+    source_id: str,
+    db: Session = Depends(get_db),
+    manager_id: str = Depends(require_manager),
+):
+    source = _get_training_source_or_404(db, source_id)
+    if source.owner_manager_id != manager_id:
+        raise HTTPException(status_code=403, detail="Manager access required")
+    if not source.storage_path:
+        raise HTTPException(status_code=404, detail="No stored file found for this source")
+
+    path = Path(source.storage_path)
+    if not path.exists():
+        raise HTTPException(status_code=404, detail="Stored file is missing")
+
+    return FileResponse(
+        path,
+        media_type=source.mime_type,
+        filename=path.name,
+        content_disposition_type="inline",
+    )
+
+
+@app.post("/api/training/upload", response_model=TrainingUploadResponse)
+def upload_training_file(
+    file: UploadFile = File(...),
+    db: Session = Depends(get_db),
+    manager_id: str = Depends(require_manager),
+):
+    filename = file.filename or "upload.bin"
+    mime_type = infer_mime_type(filename, file.content_type)
+    source_id = str(uuid4())
+    storage_path = storage_path_for_source(source_id, filename)
+
+    with storage_path.open("wb") as destination:
+        shutil.copyfileobj(file.file, destination)
+
+    source = create_training_source(
+        db,
+        source_type="upload",
+        title=filename,
+        mime_type=mime_type,
+        owner_manager_id=manager_id,
+        workspace_id=current_workspace_id(),
+        raw_text="",
+        storage_path=str(storage_path),
+    )
+    source.id = source_id
+    db.commit()
+    db.refresh(source)
+
+    return TrainingUploadResponse(
+        source=serialize_source(source),
+        message="File uploaded successfully.",
+    )
 
 # --- Employees ---
 
