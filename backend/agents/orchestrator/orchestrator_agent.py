@@ -173,7 +173,8 @@ async def _trigger_browser_actions(ctx: Context, state: PipelineState):
 async def _finalize_pipeline(ctx: Context, session_id: str):
     """Called when all agent responses are collected. Compiles report,
     posts to backend, triggers browser actions, responds to user."""
-    state = state_service.get(session_id)
+    # Atomic take — only the first caller gets the state, all others get None
+    state = state_service.take(session_id)
     if not state or not state.is_complete:
         return
 
@@ -207,8 +208,6 @@ async def _finalize_pipeline(ctx: Context, session_id: str):
                 ],
             ),
         )
-
-    state_service.remove(session_id)
 
 
 # ---------------------------------------------------------------------------

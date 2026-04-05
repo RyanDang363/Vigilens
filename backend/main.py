@@ -192,6 +192,27 @@ def create_report(data: ReportCreate, db: Session = Depends(get_db)):
     return report
 
 
+# --- All Findings (for offense-grouped view) ---
+
+@app.get("/api/findings")
+def list_all_findings(db: Session = Depends(get_db)):
+    """Return every finding with its parent employee info attached."""
+    rows = (
+        db.query(Finding, Employee.name.label("employee_name"), Employee.id.label("emp_id"), Employee.role)
+        .join(Report, Finding.report_id == Report.id)
+        .join(Employee, Report.employee_id == Employee.id)
+        .all()
+    )
+    results = []
+    for finding, emp_name, emp_id, emp_role in rows:
+        d = {c.name: getattr(finding, c.name) for c in finding.__table__.columns}
+        d["employee_name"] = emp_name
+        d["employee_id"] = emp_id
+        d["employee_role"] = emp_role
+        results.append(d)
+    return results
+
+
 # --- Video Analysis Pipeline ---
 
 ORCHESTRATOR_URL = "http://localhost:8004"

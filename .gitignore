@@ -10,6 +10,7 @@ backend/.env
 # Backend
 backend/videos/
 backend/app.db
+*.db
 __pycache__/
 *.py[cod]
 *.egg-info/

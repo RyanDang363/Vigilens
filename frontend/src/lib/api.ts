@@ -82,3 +82,14 @@ export async function fetchReport(reportId: string): Promise<Report> {
   const { data } = await api.get(`/api/reports/${reportId}`);
   return data;
 }
+
+export interface FindingWithEmployee extends Finding {
+  employee_name: string;
+  employee_id: string;
+  employee_role: string;
+}
+
+export async function fetchAllFindings(): Promise<FindingWithEmployee[]> {
+  const { data } = await api.get("/api/findings");
+  return data;
+}

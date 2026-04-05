@@ -75,9 +75,19 @@ ACTION_HANDLERS = {
     "get_training_docs": get_training_docs,
 }
 
+# Track processed requests to ignore mailbox duplicates
+_processed_sessions: set[str] = set()
+
 
 @browser_agent.on_message(BrowserActionRequest)
 async def handle_action(ctx: Context, sender: str, msg: BrowserActionRequest):
+    # Deduplicate — ignore if we already handled this session + action
+    dedup_key = f"{msg.chat_session_id}:{msg.action_type}"
+    if dedup_key in _processed_sessions:
+        ctx.logger.info(f"Skipping duplicate: {dedup_key}")
+        return
+    _processed_sessions.add(dedup_key)
+
     ctx.logger.info(
         f"Browser action: {msg.action_type} for {msg.employee_name}"
     )
@@ -96,9 +106,12 @@ async def handle_action(ctx: Context, sender: str, msg: BrowserActionRequest):
     recording_url = None
 
     try:
-        # Create a browser session with the saved Google profile
+        # Email uses agentmail (no Google login needed).
+        # Sheets and training docs need the Google profile for authentication.
+        needs_google = msg.action_type in ("log_sheet", "get_training_docs")
+
         session_kwargs = {"enable_recording": True}
-        if GOOGLE_PROFILE_ID:
+        if needs_google and GOOGLE_PROFILE_ID:
             session_kwargs["profile_id"] = GOOGLE_PROFILE_ID
 
         session = await client.sessions.create(**session_kwargs)
@@ -107,25 +120,42 @@ async def handle_action(ctx: Context, sender: str, msg: BrowserActionRequest):
 
         # Execute the action
         result = await handler(client, session.id, msg)
-
-        # Try to get recording
-        try:
-            recordings = await client.sessions.wait_for_recording(session.id)
-            if recordings:
-                recording_url = recordings[0]
-        except Exception:
-            pass
-
-        success = result is not None and getattr(result, "status", "") != "error"
         output = getattr(result, "output", str(result)) if result else ""
 
-        response = BrowserActionResponse(
-            chat_session_id=msg.chat_session_id,
-            action_type=msg.action_type,
-            success=success,
-            message=output[:500] if output else "Action completed",
-            recording_url=recording_url,
-        )
+        # Check if Google login failed (only relevant for sheets/docs)
+        if needs_google and "NOT_LOGGED_IN" in (output or ""):
+            ctx.logger.warning(
+                "Google session expired. Re-run profile setup:\n"
+                "  python -m backend.agents.browser.setup_profile"
+            )
+            response = BrowserActionResponse(
+                chat_session_id=msg.chat_session_id,
+                action_type=msg.action_type,
+                success=False,
+                message="Google login expired. Re-run profile setup to re-authenticate.",
+                recording_url=None,
+            )
+        else:
+            # Try to get recording
+            try:
+                recordings = await client.sessions.wait_for_recording(session.id)
+                if recordings:
+                    recording_url = recordings[0]
+                    ctx.logger.info(f"Recording URL: {recording_url}")
+                else:
+                    ctx.logger.info("No recording available")
+            except Exception as rec_err:
+                ctx.logger.warning(f"Could not get recording: {rec_err}")
+
+            success = result is not None and getattr(result, "status", "") != "error"
+
+            response = BrowserActionResponse(
+                chat_session_id=msg.chat_session_id,
+                action_type=msg.action_type,
+                success=success,
+                message=output[:500] if output else "Action completed",
+                recording_url=recording_url,
+            )
 
     except Exception as e:
         ctx.logger.exception(f"Browser action failed: {e}")
