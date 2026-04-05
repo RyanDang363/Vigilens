@@ -10,7 +10,7 @@ class Observation(Model):
     observation_type: str  # evidence-level label (see AGENTS.md for full list)
     timestamp_start: str  # "HH:MM:SS"
     timestamp_end: str
-    confidence: float  # 0.0-1.0 from vision pipeline
+    confidence: float = 0.85  # 0.0-1.0, defaults to 0.85 when not provided by vision pipeline
     description: str  # natural language from TwelveLabs
 
 

@@ -193,19 +193,20 @@ async def _finalize_pipeline(ctx: Context, session_id: str):
     if state.actions:
         await _trigger_browser_actions(ctx, state)
 
-    # Respond to original sender
-    summary = _build_report_summary(state)
-    await ctx.send(
-        state.user_sender_address,
-        ChatMessage(
-            timestamp=datetime.now(tz=timezone.utc),
-            msg_id=uuid4(),
-            content=[
-                TextContent(type="text", text=summary),
-                EndSessionContent(type="end-session"),
-            ],
-        ),
-    )
+    # Respond to original sender (skip if triggered via REST with no sender)
+    if state.user_sender_address:
+        summary = _build_report_summary(state)
+        await ctx.send(
+            state.user_sender_address,
+            ChatMessage(
+                timestamp=datetime.now(tz=timezone.utc),
+                msg_id=uuid4(),
+                content=[
+                    TextContent(type="text", text=summary),
+                    EndSessionContent(type="end-session"),
+                ],
+            ),
+        )
 
     state_service.remove(session_id)
 
@@ -435,9 +436,79 @@ class HealthResponse(Model):
     status: str
 
 
+class SubmitResponse(Model):
+    session_id: str
+    status: str
+    health_event_count: int
+    efficiency_event_count: int
+
+
 @orchestrator.on_rest_get("/health", HealthResponse)
 async def health_check(ctx: Context) -> HealthResponse:
     return HealthResponse(status="ok")
+
+
+@orchestrator.on_rest_post("/api/analyze", OrchestratorRequest, SubmitResponse)
+async def handle_submit(ctx: Context, req: OrchestratorRequest) -> SubmitResponse:
+    """REST entry point for the analysis pipeline (called by FastAPI backend)."""
+    session_id = str(uuid4())
+    ctx.logger.info(
+        f"REST submit: session={session_id} clip={req.clip_id} "
+        f"employee={req.employee_id} health={len(req.health_events)} "
+        f"efficiency={len(req.efficiency_events)}"
+    )
+
+    state = PipelineState(
+        chat_session_id=session_id,
+        clip_id=req.clip_id,
+        employee_id=req.employee_id,
+        employee_name=req.employee_name,
+        employee_email=req.employee_email or "",
+        manager_email=req.manager_email or "",
+        jurisdiction=req.jurisdiction,
+        sheet_url=req.sheet_url or "",
+        training_doc_url=req.training_doc_url or "",
+        actions=req.actions,
+        user_sender_address="",
+        awaiting_health=len(req.health_events) > 0,
+        awaiting_efficiency=len(req.efficiency_events) > 0,
+    )
+    state_service.set(session_id, state)
+
+    if req.health_events:
+        await ctx.send(HEALTH_AGENT_ADDRESS, HealthEvalRequest(
+            chat_session_id=session_id,
+            clip_id=req.clip_id,
+            employee_id=req.employee_id,
+            station_id=req.station_id or "",
+            jurisdiction=req.jurisdiction,
+            strictness=req.strictness,
+            event_candidates=req.health_events,
+            user_sender_address=orchestrator.address,
+        ))
+        ctx.logger.info("Sent health eval request")
+
+    if req.efficiency_events:
+        await ctx.send(EFFICIENCY_AGENT_ADDRESS, EfficiencyEvalRequest(
+            chat_session_id=session_id,
+            clip_id=req.clip_id,
+            employee_id=req.employee_id,
+            station_id=req.station_id or "",
+            strictness=req.strictness,
+            event_candidates=req.efficiency_events,
+            user_sender_address=orchestrator.address,
+        ))
+        ctx.logger.info("Sent efficiency eval request")
+
+    if not req.health_events and not req.efficiency_events:
+        await _finalize_pipeline(ctx, session_id)
+
+    return SubmitResponse(
+        session_id=session_id,
+        status="processing",
+        health_event_count=len(req.health_events),
+        efficiency_event_count=len(req.efficiency_events),
+    )
 
 
 if __name__ == "__main__":
