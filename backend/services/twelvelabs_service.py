@@ -13,40 +13,65 @@ from pathlib import Path
 from twelvelabs import TwelveLabs
 from twelvelabs.types import ResponseFormat, VideoContext_AssetId
 
-from config import get_settings
+from backend.config import get_settings
 
 logger = logging.getLogger(__name__)
 
-INFRACTION_TYPES = [
-    "DROPPED_FOOD",
-    "DROPPED_UTENSIL",
-    "SLOW_CUTTING",
-    "ON_PHONE",
-    "EXCESSIVE_CHATTING",
-    "INSUFFICIENT_HANDWASH",
-    "UNSAFE_KNIFE_HANDLING",
-    "UNSAFE_KNIFE_PLACEMENT",
-    "CROSS_CONTAMINATION",
-    "TOUCHING_FACE_OR_BODY",
+HEALTH_OBSERVATION_TYPES = [
+    "food_dropped",
+    "utensil_dropped",
+    "hand_wash_short",
+    "hand_wash_skipped",
+    "knife_pointed_at_person",
+    "knife_near_table_edge",
+    "cross_contamination",
+    "hand_to_face",
+    "bare_hand_rte",
+    "glove_not_changed",
 ]
+
+EFFICIENCY_OBSERVATION_TYPES = [
+    "phone_usage",
+    "extended_chatting",
+    "slow_task_execution",
+    "idle_at_station",
+    "off_task_behavior",
+]
+
+ALL_OBSERVATION_TYPES = HEALTH_OBSERVATION_TYPES + EFFICIENCY_OBSERVATION_TYPES
 
 ANALYZE_PROMPT = (
     "You are a workplace safety inspector reviewing kitchen footage of a single employee. "
-    "Watch the entire video and identify ALL safety, hygiene, and efficiency infractions. "
-    "The infraction type must be one of: " + ", ".join(INFRACTION_TYPES) + ". "
-    "For each infraction, timestamp_start is when the infraction begins and timestamp_end is when it ends. "
-    "They must be different -- provide the full duration of each infraction, not just a single moment. "
-    "If no infractions are found, return an empty list."
+    "Watch the entire video and identify ALL safety, hygiene, and efficiency issues.\n\n"
+    "The observation type must be one of:\n"
+    "  food_dropped — food falls on the floor or a contaminated surface\n"
+    "  utensil_dropped — a utensil falls on the floor and is reused without washing\n"
+    "  hand_wash_short — hands washed for less than 20 seconds\n"
+    "  hand_wash_skipped — no hand wash between tasks that require it\n"
+    "  knife_pointed_at_person — knife blade directed toward another person\n"
+    "  knife_near_table_edge — knife placed near the edge of a prep table\n"
+    "  cross_contamination — raw food contact followed by ready-to-eat food contact without sanitation\n"
+    "  hand_to_face — touching face, hair, or body then handling food without washing hands\n"
+    "  bare_hand_rte — bare-hand contact with ready-to-eat food (no gloves or utensils)\n"
+    "  glove_not_changed — gloves not changed between tasks or after contamination\n"
+    "  phone_usage — using a personal phone during active prep or service\n"
+    "  extended_chatting — social conversation that pauses work flow\n"
+    "  slow_task_execution — noticeably slow cutting, chopping, or prep pace\n"
+    "  idle_at_station — standing idle at an active station with work available\n"
+    "  off_task_behavior — any non-work activity during active prep time\n\n"
+    "For each observation, timestamp_start is when it begins and timestamp_end is when it ends. "
+    "They must be different — provide the full duration, not just a single moment. "
+    "If no issues are found, return an empty list."
 )
 
 RESPONSE_SCHEMA = {
     "$defs": {
-        "Infraction": {
+        "Observation": {
             "type": "object",
             "properties": {
                 "timestamp_start": {"type": "number"},
                 "timestamp_end": {"type": "number"},
-                "type": {"type": "string"},
+                "type": {"type": "string", "enum": ALL_OBSERVATION_TYPES},
                 "description": {"type": "string"},
             },
             "required": ["timestamp_start", "timestamp_end", "type", "description"],
@@ -54,12 +79,12 @@ RESPONSE_SCHEMA = {
     },
     "type": "object",
     "properties": {
-        "infractions": {
+        "observations": {
             "type": "array",
-            "items": {"$ref": "#/$defs/Infraction"},
+            "items": {"$ref": "#/$defs/Observation"},
         }
     },
-    "required": ["infractions"],
+    "required": ["observations"],
 }
 
 
@@ -123,7 +148,7 @@ def analyze_video(client: TwelveLabs, asset_id: str) -> tuple[str, list[Detectio
     detections: list[Detection] = []
     try:
         parsed = json.loads(raw)
-        for item in parsed.get("infractions", []):
+        for item in parsed.get("observations", []):
             detections.append(
                 Detection(
                     type=item["type"],
@@ -136,7 +161,7 @@ def analyze_video(client: TwelveLabs, asset_id: str) -> tuple[str, list[Detectio
         logger.warning("Failed to parse Pegasus response: %s", e)
         logger.warning("Raw response: %s", raw)
 
-    logger.info("Parsed %d infractions from Pegasus response.", len(detections))
+    logger.info("Parsed %d observations from Pegasus response.", len(detections))
     return raw, detections
 
 

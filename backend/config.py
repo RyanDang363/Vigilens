@@ -1,5 +1,10 @@
+from pathlib import Path
 from pydantic_settings import BaseSettings
 from functools import lru_cache
+
+_THIS_DIR = Path(__file__).resolve().parent
+_ENV_CANDIDATES = [_THIS_DIR / ".env", Path.cwd() / ".env"]
+_ENV_FILE = next((p for p in _ENV_CANDIDATES if p.is_file()), ".env")
 
 
 class Settings(BaseSettings):
@@ -11,7 +16,7 @@ class Settings(BaseSettings):
     secret_key: str = "change-me-in-production"
     fetchai_seed_phrase: str = ""
 
-    model_config = {"env_file": ".env"}
+    model_config = {"env_file": str(_ENV_FILE)}
 
 
 @lru_cache
