@@ -71,3 +71,51 @@ class HealthEvalResponse(Model):
     code_backed_count: int
     guidance_count: int
     highest_severity: str
+
+
+class EfficiencyEvalRequest(Model):
+    """Sent by the orchestrator to the Efficiency Agent."""
+
+    chat_session_id: str
+    clip_id: str
+    employee_id: str
+    station_id: Optional[str] = None
+    strictness: str = "medium"  # "low" | "medium" | "high"
+    event_candidates: list[EventCandidate]
+    user_sender_address: str  # for routing response back
+
+
+class EfficiencyReference(Model):
+    source_tier: str  # "workflow_standard" | "house_rule"
+    code: str  # e.g. "Internal Workflow Coaching Guide"
+    section: str  # e.g. "phone_usage"
+    short_rule: str  # human-readable summary
+
+
+class EfficiencyFinding(Model):
+    event_id: str
+    concluded_type: str  # e.g. "phone_usage"
+    status: str  # confirmed_issue | possible_issue | insufficient_evidence | not_an_issue
+    finding_class: str  # workflow_efficiency | focus_behavior | coaching_note
+    severity: str  # low | medium | high
+    duration_seconds: float
+    repeated_behavior_observed: bool
+    evidence_confidence: float
+    reference: EfficiencyReference
+    assumptions: list[str]
+    reasoning: str
+    coaching_recommendation: str
+    timestamp_start: str
+    timestamp_end: str
+
+
+class EfficiencyEvalResponse(Model):
+    """Sent by the Efficiency Agent back to the orchestrator."""
+
+    chat_session_id: str
+    clip_id: str
+    employee_id: str
+    findings: list[EfficiencyFinding]
+    confirmed_issue_count: int
+    coaching_opportunity_count: int
+    highest_severity: str

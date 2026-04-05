@@ -557,13 +557,17 @@ The Efficiency Agent should answer:
 - Did it materially affect the workflow?
 - What coaching suggestion would help improve performance?
 
+It should behave like a conservative workflow coach, not a punishment engine. The default bias is to avoid over-flagging unless the event is both sustained enough and confident enough to matter.
+
 ### What it should do
 
 The Efficiency Agent should:
 
 - identify behaviors that reduce productivity or interrupt task flow
 - distinguish brief normal pauses from actual inefficiency
-- assign a severity level based on duration, frequency, and context
+- use event duration and evidence confidence together, not confidence alone
+- account for whether behavior appears repeated rather than one-off
+- assign a severity level based on duration, repetition, and context
 - explain why the behavior matters operationally
 - recommend coaching-oriented improvements
 
@@ -586,6 +590,17 @@ For this project, the most relevant examples are:
 - cutting too slowly
 - unnecessary pauses in prep flow
 
+### How it should reason
+
+Inputs are observation-based event candidates, not pre-judged discipline labels. The video pipeline should send evidence like `phone_usage` or `extended_chatting`, and the Efficiency Agent should decide whether that event is:
+
+- `confirmed_issue`
+- `possible_issue`
+- `insufficient_evidence`
+- `not_an_issue`
+
+This is intentionally different from the health agent. Efficiency findings are softer and more context-sensitive, so the system needs a clear "this is probably fine" outcome.
+
 ### What it should not do
 
 The Efficiency Agent should not:
@@ -600,6 +615,92 @@ The agent must be conservative and avoid over-flagging brief or ambiguous behavi
 
 ### Decision guidance
 
+#### Status rules
+
+| Status | When to use |
+| --- | --- |
+| `confirmed_issue` | Sustained behavior with high confidence that clearly interrupts workflow |
+| `possible_issue` | Meaningful slowdown/distraction is present, but confidence or context is not strong enough to fully confirm |
+| `insufficient_evidence` | Confidence is too low, context is too ambiguous, or the event type is not well-resolved |
+| `not_an_issue` | Pause is too brief to matter, or looks consistent with normal work variation |
+
+The Efficiency Agent should not convert every detected event into a problem. If the duration is below a type-specific minimum, the default outcome should be `not_an_issue` even if confidence is high.
+
+#### Confidence guidance
+
+Base confidence thresholds:
+
+```text
+confidence >= 0.80 -> eligible for confirmed_issue
+confidence >= 0.55 -> eligible for possible_issue
+confidence < 0.55  -> insufficient_evidence
+```
+
+Strictness modifies thresholds:
+
+- `high`: lower thresholds by `0.10`
+- `medium`: no change
+- `low`: raise thresholds by `0.10`
+
+#### Duration gates
+
+These are the default minimum durations before the behavior should even be considered an issue:
+
+| Observation Type | Minimum Duration to Consider an Issue |
+| --- | --- |
+| `phone_usage` | 6 seconds |
+| `extended_chatting` | 15 seconds |
+| `idle_at_station` | 12 seconds |
+| `slow_task_execution` | 20 seconds |
+| `extended_task_interruption` | 15 seconds |
+| `unnecessary_movement` | 15 seconds |
+| `off_task_behavior` | 8 seconds |
+
+And these are the default escalation targets used by the adjudicator:
+
+| Observation Type | Typical `possible_issue` duration | Typical `confirmed_issue` duration |
+| --- | --- | --- |
+| `phone_usage` | 10 seconds | 18 seconds |
+| `extended_chatting` | 25 seconds | 40 seconds |
+| `idle_at_station` | 20 seconds | 35 seconds |
+| `slow_task_execution` | 30 seconds | 45 seconds |
+| `extended_task_interruption` | 20 seconds | 35 seconds |
+| `unnecessary_movement` | 20 seconds | 30 seconds |
+| `off_task_behavior` | 15 seconds | 25 seconds |
+
+Repeated observations of the same behavior should add weight. A repeated pattern can push an event toward `possible_issue` or `confirmed_issue` even when any single segment is borderline.
+
+#### Severity rules
+
+Severity is separate from status. Status answers "is this really an issue?"; severity answers "if so, how much does it matter?"
+
+Default severity by finding type:
+
+| Concluded Finding | Default Severity |
+| --- | --- |
+| `phone_usage` | `medium` |
+| `extended_chatting` | `medium` |
+| `idle_at_station` | `low` |
+| `slow_task_execution` | `low` |
+| `extended_task_interruption` | `medium` |
+| `unnecessary_movement` | `low` |
+| `off_task_behavior` | `medium` |
+
+Severity modifiers:
+
+- repeated behavior may increase severity by one level
+- confirmed events lasting 60+ seconds may increase severity by one level
+- `insufficient_evidence` should not be treated as high severity
+- `not_an_issue` should stay `low`
+
+Severity scale:
+
+| Severity | Meaning |
+| --- | --- |
+| `low` | Minor coaching opportunity or normal variation |
+| `medium` | Clear workflow lapse worth coaching |
+| `high` | Sustained distraction or slowdown with meaningful operational impact |
+
 Examples:
 
 - Employee looks at phone for 2 seconds while waiting
@@ -613,6 +714,31 @@ Examples:
 - Cutting speed is consistently much slower than expected across the clip
   - `possible_issue` or `confirmed_issue`
 
+### Output expectations
+
+Each finding should include:
+
+- `event_id`
+- `concluded_type`
+- `status`
+- `finding_class`
+- `severity`
+- `duration_seconds`
+- `repeated_behavior_observed`
+- `evidence_confidence`
+- `reference`
+- `assumptions`
+- `reasoning`
+- `coaching_recommendation`
+- `timestamp_start`
+- `timestamp_end`
+
+Suggested finding classes:
+
+- `workflow_efficiency`
+- `focus_behavior`
+- `coaching_note`
+
 ### Tone
 
 The Efficiency Agent should frame findings as coaching for workflow improvement, not surveillance for punishment.
@@ -624,3 +750,5 @@ Avoid language like:
 Prefer language like:
 
 - "task flow was interrupted for a sustained period, suggesting a coaching opportunity around focus during prep"
+- "conversation may have run long enough to slow the station, so a quicker return to the task would help"
+- "this looks more like a coaching opportunity around pacing or setup than a disciplinary issue"
