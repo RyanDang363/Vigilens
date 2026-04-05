@@ -247,7 +247,6 @@ export default function Roster() {
   const [viewMode, setViewMode] = useState<ViewMode>(initialView);
 
   // Employee filters
-  const [minFindings, setMinFindings] = useState(0);
   const [selectedRole, setSelectedRole] = useState<string>("all");
   const [sortField, setSortField] = useState<SortField>("name");
   const [sortDir, setSortDir] = useState<SortDir>("asc");
@@ -279,7 +278,6 @@ export default function Roster() {
   // Filtered & sorted employees
   const filteredEmployees = useMemo(() => {
     const filtered = employees.filter((emp) => {
-      if (emp.total_findings < minFindings) return false;
       if (selectedRole !== "all" && emp.role !== selectedRole) return false;
       return true;
     });
@@ -297,7 +295,7 @@ export default function Roster() {
     });
 
     return filtered;
-  }, [employees, minFindings, selectedRole, sortField, sortDir]);
+  }, [employees, selectedRole, sortField, sortDir]);
 
   // Grouped offenses with class filter
   const offenseGroups = useMemo(() => {
@@ -431,18 +429,6 @@ export default function Roster() {
           {/* ─── Employee view filters ─── */}
           {viewMode === "employees" && (
             <>
-              <select
-                value={minFindings}
-                onChange={(e) => setMinFindings(Number(e.target.value))}
-                className="text-sm border border-gray-200 rounded-lg px-3 py-2 bg-white focus:outline-none focus:ring-2 focus:ring-blue-400 transition-shadow"
-              >
-                <option value={0}>All Findings</option>
-                <option value={1}>1+ Findings</option>
-                <option value={2}>2+ Findings</option>
-                <option value={3}>3+ Findings</option>
-                <option value={5}>5+ Findings</option>
-              </select>
-
               {roles.length > 1 && (
                 <select
                   value={selectedRole}
@@ -484,7 +470,7 @@ export default function Roster() {
                 >
                   <path strokeLinecap="round" strokeLinejoin="round" d="M5 15l7-7 7 7" />
                 </svg>
-                <span className="text-gray-600">{sortDir === "asc" ? "A→Z" : "Z→A"}</span>
+                <span className="text-gray-600">{sortDir === "asc" ? "Ascending" : "Descending"}</span>
               </button>
             </>
           )}
@@ -524,16 +510,6 @@ export default function Roster() {
           {/* ─── Position view filters ─── */}
           {viewMode === "positions" && (
             <>
-              <select
-                value={minFindings}
-                onChange={(e) => setMinFindings(Number(e.target.value))}
-                className="text-sm border border-gray-200 rounded-lg px-3 py-2 bg-white focus:outline-none focus:ring-2 focus:ring-blue-400 transition-shadow"
-              >
-                <option value={0}>All Findings</option>
-                <option value={1}>1+ Findings</option>
-                <option value={2}>2+ Findings</option>
-                <option value={3}>3+ Findings</option>
-              </select>
             </>
           )}
         </div>
@@ -603,7 +579,6 @@ export default function Roster() {
               <p className="text-gray-400 text-lg">No employees match the current filters.</p>
               <button
                 onClick={() => {
-                  setMinFindings(0);
                   setSelectedRole("all");
                 }}
                 className="mt-3 text-sm text-blue-600 hover:underline cursor-pointer"
