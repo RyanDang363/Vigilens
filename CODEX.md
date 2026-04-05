@@ -48,8 +48,6 @@ Report
 Name
 Id
 DOB
-SSN
-League Rank
 Start Date
 
 Report
