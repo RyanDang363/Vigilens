@@ -401,7 +401,7 @@ export default function Roster() {
       </div>
 
       {/* ─── View mode tabs ───────────────────────────── */}
-      <div className="bg-white/60 backdrop-blur-sm rounded-xl border border-gray-200/60 p-3 mb-6">
+      <div className="bg-white/60 backdrop-blur-sm rounded-xl border border-gray-200/60 p-3 mb-2">
         <div className="flex flex-wrap items-center gap-2">
           {(
             [
@@ -423,97 +423,80 @@ export default function Roster() {
               {label}
             </button>
           ))}
-
-          <div className="h-6 w-px bg-gray-200 mx-1" />
-
-          {/* ─── Employee view filters ─── */}
-          {viewMode === "employees" && (
-            <>
-              {roles.length > 1 && (
-                <select
-                  value={selectedRole}
-                  onChange={(e) => setSelectedRole(e.target.value)}
-                  className="text-sm border border-gray-200 rounded-lg px-3 py-2 bg-white focus:outline-none focus:ring-2 focus:ring-blue-400 transition-shadow"
-                >
-                  <option value="all">All Roles</option>
-                  {roles.map((r) => (
-                    <option key={r} value={r}>
-                      {r}
-                    </option>
-                  ))}
-                </select>
-              )}
-
-              <select
-                value={sortField}
-                onChange={(e) => setSortField(e.target.value as SortField)}
-                className="text-sm border border-gray-200 rounded-lg px-3 py-2 bg-white focus:outline-none focus:ring-2 focus:ring-blue-400 transition-shadow"
-              >
-                <option value="name">Sort: Name</option>
-                <option value="findings">Sort: Findings</option>
-                <option value="severity">Sort: Severity</option>
-              </select>
-
-              <button
-                onClick={() => setSortDir((d) => (d === "asc" ? "desc" : "asc"))}
-                className="flex items-center gap-1 px-3 py-2 text-sm border border-gray-200 rounded-lg bg-white hover:bg-gray-50 cursor-pointer transition-colors"
-                title={sortDir === "asc" ? "Ascending" : "Descending"}
-              >
-                <svg
-                  className={`w-4 h-4 text-gray-600 transition-transform duration-200 ${
-                    sortDir === "desc" ? "rotate-180" : ""
-                  }`}
-                  fill="none"
-                  viewBox="0 0 24 24"
-                  stroke="currentColor"
-                  strokeWidth={2}
-                >
-                  <path strokeLinecap="round" strokeLinejoin="round" d="M5 15l7-7 7 7" />
-                </svg>
-                <span className="text-gray-600">{sortDir === "asc" ? "Ascending" : "Descending"}</span>
-              </button>
-            </>
-          )}
-
-          {/* ─── Offense view filters ─── */}
-          {viewMode === "offenses" && (
-            <>
-              <div className="flex items-center gap-1.5">
-                <button
-                  onClick={() => setOffenseClassFilter("all")}
-                  className={`px-3 py-1.5 rounded-lg text-xs font-medium cursor-pointer transition-all ${
-                    offenseClassFilter === "all"
-                      ? "bg-gray-800 text-white shadow-sm"
-                      : "bg-gray-100 text-gray-600 hover:bg-gray-200"
-                  }`}
-                >
-                  All Types
-                </button>
-                {offenseClasses.map((cls) => (
-                  <button
-                    key={cls}
-                    onClick={() => setOffenseClassFilter(cls as OffenseClassFilter)}
-                    className={`px-3 py-1.5 rounded-lg text-xs font-medium cursor-pointer transition-all flex items-center gap-1 ${
-                      offenseClassFilter === cls
-                        ? "bg-gray-800 text-white shadow-sm"
-                        : "bg-gray-100 text-gray-600 hover:bg-gray-200"
-                    }`}
-                  >
-                    <span>{CLASS_ICON[cls] || "📋"}</span>
-                    {CLASS_LABEL[cls] || cls}
-                  </button>
-                ))}
-              </div>
-            </>
-          )}
-
-          {/* ─── Position view filters ─── */}
-          {viewMode === "positions" && (
-            <>
-            </>
-          )}
         </div>
       </div>
+
+      {/* ─── Filters row (below tabs) ────────────────── */}
+      {viewMode === "employees" && (
+        <div className="bg-white/40 rounded-xl border border-gray-200/40 p-3 mb-6">
+          <div className="flex flex-wrap items-center gap-2">
+            {roles.length > 1 && (
+              <select
+                value={selectedRole}
+                onChange={(e) => setSelectedRole(e.target.value)}
+                className="text-sm border border-gray-200 rounded-lg px-3 py-2 bg-white focus:outline-none focus:ring-2 focus:ring-blue-400 transition-shadow"
+              >
+                <option value="all">All Roles</option>
+                {roles.map((r) => (
+                  <option key={r} value={r}>
+                    {r}
+                  </option>
+                ))}
+              </select>
+            )}
+
+            <select
+              value={sortField}
+              onChange={(e) => setSortField(e.target.value as SortField)}
+              className="text-sm border border-gray-200 rounded-lg px-3 py-2 bg-white focus:outline-none focus:ring-2 focus:ring-blue-400 transition-shadow"
+            >
+              <option value="name">Sort: Name</option>
+              <option value="findings">Sort: Findings</option>
+              <option value="severity">Sort: Severity</option>
+            </select>
+
+            <button
+              onClick={() => setSortDir((d) => (d === "asc" ? "desc" : "asc"))}
+              className="flex items-center gap-1 px-3 py-2 text-sm border border-gray-200 rounded-lg bg-white hover:bg-gray-50 cursor-pointer transition-colors"
+              title={sortDir === "asc" ? "Ascending" : "Descending"}
+            >
+              <svg
+                className={`w-4 h-4 text-gray-600 transition-transform duration-200 ${
+                  sortDir === "desc" ? "rotate-180" : ""
+                }`}
+                fill="none"
+                viewBox="0 0 24 24"
+                stroke="currentColor"
+                strokeWidth={2}
+              >
+                <path strokeLinecap="round" strokeLinejoin="round" d="M5 15l7-7 7 7" />
+              </svg>
+              <span className="text-gray-600">{sortDir === "asc" ? "Ascending" : "Descending"}</span>
+            </button>
+          </div>
+        </div>
+      )}
+
+      {viewMode === "offenses" && (
+        <div className="bg-white/40 rounded-xl border border-gray-200/40 p-3 mb-6">
+          <div className="flex flex-wrap items-center gap-2">
+            <select
+              value={offenseClassFilter}
+              onChange={(e) => setOffenseClassFilter(e.target.value as OffenseClassFilter)}
+              className="text-sm border border-gray-200 rounded-lg px-3 py-2 bg-white focus:outline-none focus:ring-2 focus:ring-blue-400 transition-shadow"
+            >
+              <option value="all">All Types</option>
+              {offenseClasses.map((cls) => (
+                <option key={cls} value={cls}>
+                  {CLASS_LABEL[cls] || cls}
+                </option>
+              ))}
+            </select>
+          </div>
+        </div>
+      )}
+
+      {viewMode === "positions" && <div className="mb-6" />}
 
       {/* ─── BY EMPLOYEE view ─────────────────────────── */}
       {viewMode === "employees" && (
@@ -543,30 +526,34 @@ export default function Roster() {
                   </div>
                 </div>
 
-                <div className="flex items-center gap-5 text-sm">
-                  <div className="text-center">
+                <div className="flex items-center text-sm">
+                  <div className="w-20 text-center">
                     <p className="text-xs text-gray-400 uppercase tracking-wide">Findings</p>
                     <p className={`text-lg font-bold ${emp.total_findings > 0 ? "text-gray-900" : "text-gray-300"}`}>
                       {emp.total_findings}
                     </p>
                   </div>
-                  <div className="text-center">
+                  <div className="w-20 text-center">
                     <p className="text-xs text-gray-400 uppercase tracking-wide">Reports</p>
                     <p className={`text-lg font-bold ${emp.total_reports > 0 ? "text-gray-900" : "text-gray-300"}`}>
                       {emp.total_reports}
                     </p>
                   </div>
-                  {emp.total_findings > 0 && (
-                    <span
-                      className={`px-3 py-1 rounded-full text-xs font-semibold ${
-                        SEVERITY_PILL[emp.highest_severity] ||
-                        SEVERITY_PILL.low
-                      }`}
-                    >
-                      {emp.highest_severity.toUpperCase()}
-                    </span>
-                  )}
-                  <svg className="w-5 h-5 text-gray-300" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <div className="w-20 text-center">
+                    {emp.total_findings > 0 ? (
+                      <span
+                        className={`px-3 py-1 rounded-full text-xs font-semibold ${
+                          SEVERITY_PILL[emp.highest_severity] ||
+                          SEVERITY_PILL.low
+                        }`}
+                      >
+                        {emp.highest_severity.toUpperCase()}
+                      </span>
+                    ) : (
+                      <span />
+                    )}
+                  </div>
+                  <svg className="w-5 h-5 text-gray-300 ml-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
                   </svg>
                 </div>
