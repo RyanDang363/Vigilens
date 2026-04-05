@@ -8,13 +8,13 @@ from pathlib import Path
 from uuid import uuid4
 
 import httpx
-from fastapi import FastAPI, Depends, File, Form, Header, HTTPException, UploadFile
+from fastapi import FastAPI, Depends, File, Form, Header, HTTPException, Response, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from sqlalchemy.orm import Session
 
 from backend.database import engine, get_db, Base
-from backend.config import get_settings
+from backend.config import describe_twelvelabs_config_for_logs, get_settings
 from backend.models import Employee, Finding, Report, TrainingSource
 from backend.schemas import (
     EmployeeCreate,
@@ -54,6 +54,12 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
+@app.on_event("startup")
+def _log_twelvelabs_startup() -> None:
+    logger.info("Startup: %s", describe_twelvelabs_config_for_logs())
+
 
 def require_manager(x_role: str = Header(default="manager")) -> str:
     if x_role != "manager":
@@ -444,7 +450,35 @@ def create_employee(data: EmployeeCreate, db: Session = Depends(get_db)):
         role=emp.role,
         station=emp.station,
         start_date=emp.start_date,
+        total_findings=0,
+        total_reports=0,
+        highest_severity="low",
     )
+
+
+def _delete_employee_cascade(db: Session, employee_id: str) -> None:
+    emp = db.query(Employee).filter(Employee.id == employee_id).first()
+    if not emp:
+        raise HTTPException(status_code=404, detail="Employee not found")
+    reports = db.query(Report).filter(Report.employee_id == employee_id).all()
+    for r in reports:
+        db.query(Finding).filter(Finding.report_id == r.id).delete()
+    db.query(Report).filter(Report.employee_id == employee_id).delete()
+    db.delete(emp)
+    db.commit()
+
+
+@app.delete("/api/employees/{employee_id}", status_code=204)
+def delete_employee(employee_id: str, db: Session = Depends(get_db)):
+    _delete_employee_cascade(db, employee_id)
+    return Response(status_code=204)
+
+
+@app.post("/api/employees/{employee_id}/delete", status_code=204)
+def delete_employee_post(employee_id: str, db: Session = Depends(get_db)):
+    """Same as DELETE; POST avoids 405 from proxies or clients that omit the path id."""
+    _delete_employee_cascade(db, employee_id)
+    return Response(status_code=204)
 
 
 # --- Reports ---
@@ -554,7 +588,6 @@ async def analyze_video(
     video: UploadFile = File(...),
     employee_id: str = Form(...),
     jurisdiction: str = Form("federal"),
-    strictness: str = Form("medium"),
     db: Session = Depends(get_db),
 ):
     """Upload a video, run TwelveLabs detection, and send to the agent pipeline."""
@@ -604,7 +637,6 @@ async def analyze_video(
         "employee_id": emp.id,
         "employee_name": emp.name,
         "jurisdiction": jurisdiction,
-        "strictness": strictness,
         "health_events": health_events,
         "efficiency_events": efficiency_events,
         "actions": [],

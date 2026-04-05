@@ -49,7 +49,7 @@ efficiency_agent = Agent(
 )
 
 
-def evaluate_events(event_candidates, strictness):
+def evaluate_events(event_candidates):
     findings: list[EfficiencyFinding] = []
 
     for event in event_candidates:
@@ -108,7 +108,7 @@ async def handle_eval(ctx: Context, sender: str, msg: EfficiencyEvalRequest):
         f"events={len(msg.event_candidates)}"
     )
 
-    findings = evaluate_events(msg.event_candidates, msg.strictness)
+    findings = evaluate_events(msg.event_candidates)
     confirmed_issue_count = len(findings)
     coaching_opportunity_count = len(findings)
     highest_severity = max(
@@ -181,7 +181,7 @@ async def handle_chat(ctx: Context, sender: str, msg: ChatMessage):
         ),
     )
 
-    findings = evaluate_events(DEMO_EVENTS, strictness="medium")
+    findings = evaluate_events(DEMO_EVENTS)
     lines = [f"Efficiency Agent Demo - {len(findings)} finding(s):\n"]
 
     for finding in findings:
@@ -225,7 +225,7 @@ async def handle_rest_eval(ctx: Context, req: EfficiencyEvalRequest) -> Efficien
         f"events={len(req.event_candidates)}"
     )
 
-    findings = evaluate_events(req.event_candidates, req.strictness)
+    findings = evaluate_events(req.event_candidates)
     confirmed_issue_count = len(findings)
     coaching_opportunity_count = len(findings)
     highest_severity = max(

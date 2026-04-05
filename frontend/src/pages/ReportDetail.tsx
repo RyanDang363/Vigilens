@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { useParams, Link } from "react-router-dom";
-import { fetchReport, type Report } from "../lib/api";
+import { fetchEmployee, fetchReport, type Report } from "../lib/api";
 
 const SEVERITY_COLORS: Record<string, string> = {
   low: "bg-gray-100 text-gray-700 border-gray-200",
@@ -39,12 +39,26 @@ function formatType(type: string): string {
 export default function ReportDetail() {
   const { id } = useParams<{ id: string }>();
   const [report, setReport] = useState<Report | null>(null);
+  const [employeeName, setEmployeeName] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     if (!id) return;
+    setLoading(true);
     fetchReport(id)
-      .then(setReport)
+      .then(async (r) => {
+        setReport(r);
+        try {
+          const emp = await fetchEmployee(r.employee_id);
+          setEmployeeName(emp.name);
+        } catch {
+          setEmployeeName(null);
+        }
+      })
+      .catch(() => {
+        setReport(null);
+        setEmployeeName(null);
+      })
       .finally(() => setLoading(false));
   }, [id]);
 
@@ -65,7 +79,7 @@ export default function ReportDetail() {
         <div className="flex items-center justify-between">
           <div>
             <h1 className="text-xl font-semibold">
-              Report — {report.clip_id || "N/A"}
+              {employeeName ? `${employeeName}'s Report` : "Report"}
             </h1>
             <p className="text-sm text-gray-500 mt-1">
               {report.jurisdiction.toUpperCase()} jurisdiction
@@ -139,12 +153,16 @@ export default function ReportDetail() {
               </div>
             </div>
 
-            {/* Reasoning */}
-            <p className="mt-3 text-sm">{f.reasoning}</p>
+            <div className="mt-3 text-sm">
+              <span className="font-medium text-gray-800">
+                Infraction recorded:{" "}
+              </span>
+              <span>{f.reasoning}</span>
+            </div>
 
             {/* Policy citation */}
             <div className="mt-3 text-xs">
-              <span className="font-medium">Policy: </span>
+              <span className="font-medium">Policy violated: </span>
               {f.policy_url ? (
                 <a
                   href={f.policy_url}
@@ -162,9 +180,8 @@ export default function ReportDetail() {
             </div>
             <p className="text-xs mt-1 italic">{f.policy_short_rule}</p>
 
-            {/* Coaching */}
             <div className="mt-3 p-3 bg-white/50 rounded text-sm">
-              <span className="font-medium">Coaching: </span>
+              <span className="font-medium">Mitigation: </span>
               {f.training_recommendation}
             </div>
 

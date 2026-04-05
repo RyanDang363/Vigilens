@@ -7,7 +7,7 @@ Usage:
     python -m backend.scripts.test_pipeline backend/videos/YOUR_VIDEO.mov emp_1
 
     # With optional flags:
-    python -m backend.scripts.test_pipeline backend/videos/clip.mov emp_1 --jurisdiction california --strictness high
+    python -m backend.scripts.test_pipeline backend/videos/clip.mov emp_1 --jurisdiction california
 
     # Skip TwelveLabs (use mock detections for testing agent wiring):
     python -m backend.scripts.test_pipeline --mock emp_1
@@ -110,7 +110,6 @@ def main():
     parser.add_argument("employee_id", help="Employee ID (e.g. emp_1)")
     parser.add_argument("--mock", action="store_true", help="Use mock detections instead of TwelveLabs")
     parser.add_argument("--jurisdiction", default="federal")
-    parser.add_argument("--strictness", default="medium")
     args = parser.parse_args()
 
     if args.mock:
@@ -142,7 +141,6 @@ def main():
         "employee_id": args.employee_id,
         "employee_name": "Test Employee",
         "jurisdiction": args.jurisdiction,
-        "strictness": args.strictness,
         "health_events": health_events,
         "efficiency_events": efficiency_events,
         "actions": [],

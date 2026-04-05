@@ -30,7 +30,6 @@ class HealthEvalRequest(Model):
     employee_id: str
     station_id: Optional[str] = None
     jurisdiction: str = "federal"  # "federal" | "california" | "custom"
-    strictness: str = "medium"  # "low" | "medium" | "high"
     event_candidates: list[EventCandidate]
     user_sender_address: str  # for routing response back
 
@@ -77,7 +76,6 @@ class EfficiencyEvalRequest(Model):
     clip_id: str
     employee_id: str
     station_id: Optional[str] = None
-    strictness: str = "medium"  # "low" | "medium" | "high"
     event_candidates: list[EventCandidate]
     user_sender_address: str  # for routing response back
 
@@ -160,7 +158,6 @@ class OrchestratorRequest(Model):
     manager_email: Optional[str] = None
     station_id: Optional[str] = None
     jurisdiction: str = "federal"
-    strictness: str = "medium"
     health_events: list[EventCandidate] = []
     efficiency_events: list[EventCandidate] = []
     sheet_url: Optional[str] = None

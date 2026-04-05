@@ -1,20 +1,15 @@
-import { useEffect, useState, useMemo } from "react";
+import { useEffect, useState, useMemo, type FormEvent } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 import {
+  createEmployee,
   fetchEmployees,
   fetchAllFindings,
+  getApiErrorMessage,
   type Employee,
   type FindingWithEmployee,
 } from "../lib/api";
 
 // ─── Color maps ─────────────────────────────────────────────────────
-const SEVERITY_COLORS: Record<string, string> = {
-  low: "bg-emerald-50 text-emerald-700 border-emerald-200",
-  medium: "bg-amber-50 text-amber-700 border-amber-200",
-  high: "bg-orange-50 text-orange-700 border-orange-200",
-  critical: "bg-red-50 text-red-700 border-red-200",
-};
-
 const SEVERITY_PILL: Record<string, string> = {
   low: "bg-emerald-100 text-emerald-800",
   medium: "bg-amber-100 text-amber-800",
@@ -200,15 +195,14 @@ function OffenseCard({ group }: { group: OffenseGroup }) {
             </Link>
           ))}
 
-          {/* Expanded detail: reasoning summary */}
           <div className="px-5 py-4 bg-gradient-to-r from-gray-50 to-blue-50/30 text-sm text-gray-600">
             <p className="font-semibold text-gray-700 mb-1.5 flex items-center gap-1.5">
-              <span className="text-base">💡</span> Example reasoning:
+              <span className="text-base">💡</span> Infraction recorded:
             </p>
             <p className="italic leading-relaxed">{group.findings[0]?.reasoning}</p>
             {group.findings[0]?.training_recommendation && (
               <div className="mt-3 p-3 bg-white/70 rounded-lg border border-blue-100">
-                <span className="font-semibold text-blue-700">Coaching: </span>
+                <span className="font-semibold text-blue-700">Mitigation: </span>
                 <span className="text-gray-700">{group.findings[0].training_recommendation}</span>
               </div>
             )}
@@ -237,14 +231,59 @@ export default function Roster() {
   // Offense filters
   const [offenseClassFilter, setOffenseClassFilter] = useState<OffenseClassFilter>("all");
 
+  const [addOpen, setAddOpen] = useState(false);
+  const [addForm, setAddForm] = useState({
+    id: "",
+    name: "",
+    role: "",
+    station: "",
+    start_date: "",
+  });
+  const [addSaving, setAddSaving] = useState(false);
+  const [addError, setAddError] = useState<string | null>(null);
+
+  const refetchRoster = async () => {
+    const [emps, fndgs] = await Promise.all([fetchEmployees(), fetchAllFindings()]);
+    setEmployees(emps);
+    setFindings(fndgs);
+  };
+
   useEffect(() => {
-    Promise.all([fetchEmployees(), fetchAllFindings()])
-      .then(([emps, fndgs]) => {
-        setEmployees(emps);
-        setFindings(fndgs);
-      })
-      .finally(() => setLoading(false));
+    let cancelled = false;
+    setLoading(true);
+    refetchRoster()
+      .finally(() => {
+        if (!cancelled) setLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
   }, []);
+
+  const openAddModal = () => {
+    setAddForm({ id: "", name: "", role: "", station: "", start_date: "" });
+    setAddError(null);
+    setAddOpen(true);
+  };
+
+  const submitAddEmployee = async (e: FormEvent) => {
+    e.preventDefault();
+    if (!addForm.id.trim() || !addForm.name.trim()) {
+      setAddError("Employee ID and name are required.");
+      return;
+    }
+    setAddSaving(true);
+    setAddError(null);
+    try {
+      await createEmployee(addForm);
+      setAddOpen(false);
+      await refetchRoster();
+    } catch (err) {
+      setAddError(getApiErrorMessage(err));
+    } finally {
+      setAddSaving(false);
+    }
+  };
 
   // Unique roles
   const roles = useMemo(() => {
@@ -456,6 +495,14 @@ export default function Roster() {
               </svg>
               <span className="text-gray-600">{sortDir === "asc" ? "Ascending" : "Descending"}</span>
             </button>
+
+            <button
+              type="button"
+              onClick={openAddModal}
+              className="ml-auto px-4 py-2 rounded-lg text-sm font-medium bg-gradient-to-r from-blue-600 to-violet-600 text-white shadow-md shadow-blue-200 hover:opacity-95 transition-opacity cursor-pointer"
+            >
+              + Add employee
+            </button>
           </div>
         </div>
       )}
@@ -485,31 +532,33 @@ export default function Roster() {
       {viewMode === "employees" && (
         <div className="grid gap-3">
           {filteredEmployees.map((emp) => (
-            <Link
+            <div
               key={emp.id}
-              to={`/employees/${emp.id}`}
-              className={`block bg-white rounded-xl border border-gray-200 p-5 card-lift severity-accent-${emp.total_findings > 0 ? emp.highest_severity : "low"}`}
+              className={`flex flex-col sm:flex-row sm:items-stretch gap-2 sm:gap-0 bg-white rounded-xl border border-gray-200 overflow-hidden card-lift severity-accent-${emp.total_findings > 0 ? emp.highest_severity : "low"}`}
             >
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-3">
+              <Link
+                to={`/employees/${emp.id}`}
+                className="flex-1 flex items-center justify-between p-5 min-w-0 hover:bg-gray-50/80 transition-colors"
+              >
+                <div className="flex items-center gap-3 min-w-0">
                   <div className="w-10 h-10 rounded-full bg-gradient-to-br from-blue-100 to-violet-100 flex items-center justify-center text-sm font-bold text-blue-700 shrink-0">
                     {emp.name
                       .split(" ")
                       .map((n) => n[0])
                       .join("")}
                   </div>
-                  <div>
-                    <h2 className="text-base font-semibold text-gray-900">
+                  <div className="min-w-0">
+                    <h2 className="text-base font-semibold text-gray-900 truncate">
                       {emp.name}
                     </h2>
-                    <p className="text-sm text-gray-400">
+                    <p className="text-sm text-gray-400 truncate">
                       {emp.role}
                       {emp.station && ` · ${emp.station}`}
                     </p>
                   </div>
                 </div>
 
-                <div className="flex items-center text-sm">
+                <div className="flex items-center text-sm shrink-0">
                   <div className="w-20 text-center">
                     <p className="text-xs text-gray-400 uppercase tracking-wide">Findings</p>
                     <p className={`text-lg font-bold ${emp.total_findings > 0 ? "text-gray-900" : "text-gray-300"}`}>
@@ -540,21 +589,37 @@ export default function Roster() {
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
                   </svg>
                 </div>
+              </Link>
+              <div className="flex sm:flex-col justify-center border-t sm:border-t-0 sm:border-l border-gray-100 px-3 py-2 sm:py-5 sm:pr-4 bg-gray-50/50 sm:bg-transparent">
+                <Link
+                  to={`/employees/${emp.id}#end-of-day-upload`}
+                  className="text-center text-sm font-medium text-blue-600 hover:text-blue-800 px-3 py-2 rounded-lg hover:bg-blue-50 transition-colors whitespace-nowrap"
+                >
+                  Upload video
+                </Link>
               </div>
-            </Link>
+            </div>
           ))}
 
           {filteredEmployees.length === 0 && (
             <div className="text-center py-12">
               <p className="text-gray-400 text-lg">No employees match the current filters.</p>
-              <button
-                onClick={() => {
-                  setSelectedRole("all");
-                }}
-                className="mt-3 text-sm text-blue-600 hover:underline cursor-pointer"
-              >
-                Clear filters
-              </button>
+              <div className="mt-3 flex flex-wrap items-center justify-center gap-3">
+                <button
+                  type="button"
+                  onClick={() => setSelectedRole("all")}
+                  className="text-sm text-blue-600 hover:underline cursor-pointer"
+                >
+                  Clear filters
+                </button>
+                <button
+                  type="button"
+                  onClick={openAddModal}
+                  className="text-sm font-medium text-white px-4 py-2 rounded-lg bg-gradient-to-r from-blue-600 to-violet-600 hover:opacity-95 cursor-pointer"
+                >
+                  Add employee
+                </button>
+              </div>
             </div>
           )}
         </div>
@@ -595,29 +660,31 @@ export default function Roster() {
               </h2>
               <div className="grid gap-3">
                 {emps.map((emp) => (
-                  <Link
+                  <div
                     key={emp.id}
-                    to={`/employees/${emp.id}`}
-                    className={`block bg-white rounded-xl border border-gray-200 p-4 card-lift severity-accent-${emp.total_findings > 0 ? emp.highest_severity : "low"}`}
+                    className={`flex flex-col sm:flex-row sm:items-stretch gap-1 sm:gap-0 bg-white rounded-xl border border-gray-200 overflow-hidden card-lift severity-accent-${emp.total_findings > 0 ? emp.highest_severity : "low"}`}
                   >
-                    <div className="flex items-center justify-between">
-                      <div className="flex items-center gap-3">
-                        <div className="w-9 h-9 rounded-full bg-gradient-to-br from-blue-100 to-violet-100 flex items-center justify-center text-xs font-bold text-blue-700">
+                    <Link
+                      to={`/employees/${emp.id}`}
+                      className="flex-1 flex items-center justify-between p-4 min-w-0 hover:bg-gray-50/80 transition-colors"
+                    >
+                      <div className="flex items-center gap-3 min-w-0">
+                        <div className="w-9 h-9 rounded-full bg-gradient-to-br from-blue-100 to-violet-100 flex items-center justify-center text-xs font-bold text-blue-700 shrink-0">
                           {emp.name
                             .split(" ")
                             .map((n) => n[0])
                             .join("")}
                         </div>
-                        <div>
-                          <h3 className="font-semibold text-gray-900">
+                        <div className="min-w-0">
+                          <h3 className="font-semibold text-gray-900 truncate">
                             {emp.name}
                           </h3>
-                          <p className="text-xs text-gray-400">
+                          <p className="text-xs text-gray-400 truncate">
                             {emp.station || "No station"}
                           </p>
                         </div>
                       </div>
-                      <div className="flex items-center gap-4 text-sm">
+                      <div className="flex items-center gap-4 text-sm shrink-0">
                         <div className="text-center">
                           <p className="text-xs text-gray-400 uppercase tracking-wide">
                             Findings
@@ -638,8 +705,16 @@ export default function Roster() {
                           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
                         </svg>
                       </div>
+                    </Link>
+                    <div className="flex sm:flex-col justify-center border-t sm:border-t-0 sm:border-l border-gray-100 px-2 py-1 sm:py-4 sm:pr-3 bg-gray-50/50 sm:bg-transparent">
+                      <Link
+                        to={`/employees/${emp.id}#end-of-day-upload`}
+                        className="text-center text-xs sm:text-sm font-medium text-blue-600 hover:text-blue-800 px-2 py-2 rounded-lg hover:bg-blue-50"
+                      >
+                        Upload video
+                      </Link>
                     </div>
-                  </Link>
+                  </div>
                 ))}
               </div>
             </div>
@@ -650,6 +725,116 @@ export default function Roster() {
               <p className="text-gray-400 text-lg">No employees match the current filters.</p>
             </div>
           )}
+        </div>
+      )}
+
+      {addOpen && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40 backdrop-blur-sm"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="add-employee-title"
+          onClick={() => !addSaving && setAddOpen(false)}
+        >
+          <div
+            className="bg-white rounded-xl shadow-xl max-w-md w-full p-6 border border-gray-200"
+            onClick={(ev) => ev.stopPropagation()}
+          >
+            <h2 id="add-employee-title" className="text-lg font-bold text-gray-900 mb-4">
+              Add employee
+            </h2>
+            <form onSubmit={submitAddEmployee} className="space-y-3">
+              <div>
+                <label htmlFor="emp-id" className="block text-xs font-medium text-gray-500 mb-1">
+                  Employee ID
+                </label>
+                <input
+                  id="emp-id"
+                  value={addForm.id}
+                  onChange={(e) => setAddForm((f) => ({ ...f, id: e.target.value }))}
+                  placeholder="e.g. emp_12"
+                  className="w-full text-sm border border-gray-200 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-400"
+                  autoComplete="off"
+                  disabled={addSaving}
+                />
+              </div>
+              <div>
+                <label htmlFor="emp-name" className="block text-xs font-medium text-gray-500 mb-1">
+                  Name
+                </label>
+                <input
+                  id="emp-name"
+                  value={addForm.name}
+                  onChange={(e) => setAddForm((f) => ({ ...f, name: e.target.value }))}
+                  placeholder="Full name"
+                  className="w-full text-sm border border-gray-200 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-400"
+                  autoComplete="name"
+                  disabled={addSaving}
+                />
+              </div>
+              <div>
+                <label htmlFor="emp-role" className="block text-xs font-medium text-gray-500 mb-1">
+                  Role
+                </label>
+                <input
+                  id="emp-role"
+                  value={addForm.role}
+                  onChange={(e) => setAddForm((f) => ({ ...f, role: e.target.value }))}
+                  placeholder="e.g. Line cook"
+                  className="w-full text-sm border border-gray-200 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-400"
+                  disabled={addSaving}
+                />
+              </div>
+              <div>
+                <label htmlFor="emp-station" className="block text-xs font-medium text-gray-500 mb-1">
+                  Station
+                </label>
+                <input
+                  id="emp-station"
+                  value={addForm.station}
+                  onChange={(e) => setAddForm((f) => ({ ...f, station: e.target.value }))}
+                  placeholder="e.g. Grill"
+                  className="w-full text-sm border border-gray-200 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-400"
+                  disabled={addSaving}
+                />
+              </div>
+              <div>
+                <label htmlFor="emp-start" className="block text-xs font-medium text-gray-500 mb-1">
+                  Start date
+                </label>
+                <input
+                  id="emp-start"
+                  value={addForm.start_date}
+                  onChange={(e) => setAddForm((f) => ({ ...f, start_date: e.target.value }))}
+                  placeholder="e.g. 2026-01-15"
+                  className="w-full text-sm border border-gray-200 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-400"
+                  disabled={addSaving}
+                />
+              </div>
+              {addError && (
+                <p className="text-sm text-red-600" role="alert">
+                  {addError}
+                </p>
+              )}
+              <div className="flex justify-end gap-2 pt-2">
+                <button
+                  type="button"
+                  onClick={() => !addSaving && setAddOpen(false)}
+                  className="px-4 py-2 text-sm font-medium text-gray-600 rounded-lg border border-gray-200 hover:bg-gray-50 cursor-pointer disabled:opacity-50"
+                  disabled={addSaving}
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={addSaving}
+                  className="px-4 py-2 text-sm font-medium text-white rounded-lg bg-gradient-to-r from-blue-600 to-violet-600 hover:opacity-95 cursor-pointer disabled:opacity-50"
+                >
+                  {addSaving ? "Saving…" : "Add"}
+                </button>
+              </div>
+            </form>
+          </div>
         </div>
       )}
     </div>

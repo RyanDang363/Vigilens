@@ -256,7 +256,6 @@ async def handle_request(ctx: Context, sender: str, msg: OrchestratorRequest):
             employee_id=msg.employee_id,
             station_id=msg.station_id or "",
             jurisdiction=msg.jurisdiction,
-            strictness=msg.strictness,
             event_candidates=msg.health_events,
             user_sender_address=orchestrator.address,
         ))
@@ -269,7 +268,6 @@ async def handle_request(ctx: Context, sender: str, msg: OrchestratorRequest):
             clip_id=msg.clip_id,
             employee_id=msg.employee_id,
             station_id=msg.station_id or "",
-            strictness=msg.strictness,
             event_candidates=msg.efficiency_events,
             user_sender_address=orchestrator.address,
         ))
@@ -399,7 +397,6 @@ async def handle_chat(ctx: Context, sender: str, msg: ChatMessage):
         employee_id="emp_1",
         employee_name="Maria Garcia",
         jurisdiction="california",
-        strictness="medium",
         health_events=DEMO_HEALTH_EVENTS,
         efficiency_events=DEMO_EFFICIENCY_EVENTS,
         actions=[],  # no browser actions in demo chat
@@ -479,7 +476,6 @@ async def handle_submit(ctx: Context, req: OrchestratorRequest) -> SubmitRespons
                 employee_id=req.employee_id,
                 station_id=req.station_id or "",
                 jurisdiction=req.jurisdiction,
-                strictness=req.strictness,
                 event_candidates=req.health_events,
                 user_sender_address=orchestrator.address,
             )
@@ -510,7 +506,6 @@ async def handle_submit(ctx: Context, req: OrchestratorRequest) -> SubmitRespons
                 clip_id=req.clip_id,
                 employee_id=req.employee_id,
                 station_id=req.station_id or "",
-                strictness=req.strictness,
                 event_candidates=req.efficiency_events,
                 user_sender_address=orchestrator.address,
             )
