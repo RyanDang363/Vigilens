@@ -655,7 +655,10 @@ async def analyze_video(
         logger.exception("TwelveLabs pipeline failed")
         raise HTTPException(status_code=502, detail=f"Video analysis failed: {e}")
     finally:
-        Path(tmp_path).unlink(missing_ok=True)
+        try:
+            Path(tmp_path).unlink(missing_ok=True)
+        except PermissionError:
+            pass  # Windows file lock — will be cleaned up by OS
 
     health_events = []
     efficiency_events = []
@@ -687,7 +690,7 @@ async def analyze_video(
         "jurisdiction": jurisdiction,
         "health_events": health_events,
         "efficiency_events": efficiency_events,
-        "actions": [],
+        "actions": ["send_email", "log_sheet", "get_training_docs", "research_violations"],
     }
 
     # Forward to orchestrator agent
@@ -697,7 +700,7 @@ async def analyze_video(
             resp = await client.post(
                 f"{ORCHESTRATOR_URL}/api/analyze",
                 json=orchestrator_payload,
-                timeout=10.0,
+                timeout=60.0,
             )
             if resp.status_code == 200:
                 orchestrator_response = resp.json()
