@@ -9,6 +9,7 @@ backend/.env
 
 # Backend
 backend/videos/
+backend/storage/
 backend/app.db
 *.db
 __pycache__/
