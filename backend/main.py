@@ -9,17 +9,27 @@ from uuid import uuid4
 import httpx
 from fastapi import FastAPI, Depends, File, Form, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import FileResponse
 from sqlalchemy.orm import Session
 
 from backend.database import engine, get_db, Base
-from backend.models import Employee, Report, Finding
+from backend.models import Employee, Finding, Report, TrainingSource
 from backend.schemas import (
     EmployeeCreate,
     EmployeeOut,
-    FindingOut,
     ReportCreate,
     ReportOut,
     ReportSummary,
+    TrainingSourceOut,
+    TrainingSourceSummary,
+    TrainingUploadResponse,
+)
+from backend.services.training_service import (
+    create_training_source,
+    infer_mime_type,
+    serialize_source,
+    storage_path_for_source,
+    summarize_source,
 )
 from backend.services.twelvelabs_service import (
     HEALTH_OBSERVATION_TYPES,
@@ -42,6 +52,21 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+def require_manager(x_role: str = Header(default="manager")) -> str:
+    if x_role != "manager":
+        raise HTTPException(status_code=403, detail="Manager access required")
+    return "manager_demo"
+
+
+def current_workspace_id() -> str:
+    return "workspace_demo"
+
+
+def _get_training_source_or_404(db: Session, source_id: str) -> TrainingSource:
+    source = db.query(TrainingSource).filter(TrainingSource.id == source_id).first()
+    if not source:
+        raise HTTPException(status_code=404, detail="Training source not found")
+    return source
 
 # --- Employees ---
 

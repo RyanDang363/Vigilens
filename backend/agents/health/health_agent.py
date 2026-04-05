@@ -1,5 +1,5 @@
 """
-Health Agent â€” receives observation-based event candidates from the orchestrator,
+Health Agent — receives observation-based event candidates from the orchestrator,
 adjudicates food safety and workplace safety findings, and returns structured
 results with policy citations and coaching recommendations.
 
@@ -222,7 +222,7 @@ async def handle_chat(ctx: Context, sender: str, msg: ChatMessage):
     findings = evaluate_events(DEMO_EVENTS, jurisdiction="california", strictness="medium")
 
     # Format findings as readable text
-    lines = [f"Health Agent Demo â€” {len(findings)} finding(s):\n"]
+    lines = [f"Health Agent Demo — {len(findings)} finding(s):\n"]
     for f in findings:
         lines.append(
             f"[{f.severity.upper()}] {f.concluded_type}\n"
