@@ -10,7 +10,7 @@ from __future__ import annotations
 from datetime import datetime, timezone
 from uuid import uuid4
 
-from uagents import Agent, Context, Protocol
+from uagents import Agent, Context, Model, Protocol
 from uagents_core.contrib.protocols.chat import (
     ChatAcknowledgement,
     ChatMessage,
@@ -224,6 +224,44 @@ async def handle_ack(ctx: Context, sender: str, msg: ChatAcknowledgement):
 
 
 efficiency_agent.include(chat_proto, publish_manifest=True)
+
+
+# ---------------------------------------------------------------------------
+# REST endpoint for direct HTTP evaluation (bypasses uagents message passing)
+# ---------------------------------------------------------------------------
+
+@efficiency_agent.on_rest_post("/evaluate", EfficiencyEvalRequest, EfficiencyEvalResponse)
+async def handle_rest_eval(ctx: Context, req: EfficiencyEvalRequest) -> EfficiencyEvalResponse:
+    ctx.logger.info(
+        f"REST efficiency eval for clip={req.clip_id} employee={req.employee_id} "
+        f"events={len(req.event_candidates)}"
+    )
+
+    findings = evaluate_events(req.event_candidates, req.strictness)
+    confirmed_issue_count = sum(1 for f in findings if f.status == "confirmed_issue")
+    coaching_opportunity_count = sum(
+        1 for f in findings if f.status in {"confirmed_issue", "possible_issue"}
+    )
+    highest_severity = max(
+        (f.severity for f in findings),
+        key=lambda value: SEVERITY_LEVELS.index(value),
+        default="low",
+    )
+
+    ctx.logger.info(
+        f"REST efficiency eval complete: {len(findings)} findings, "
+        f"confirmed={confirmed_issue_count}, highest={highest_severity}"
+    )
+
+    return EfficiencyEvalResponse(
+        chat_session_id=req.chat_session_id,
+        clip_id=req.clip_id,
+        employee_id=req.employee_id,
+        findings=findings,
+        confirmed_issue_count=confirmed_issue_count,
+        coaching_opportunity_count=coaching_opportunity_count,
+        highest_severity=highest_severity,
+    )
 
 
 if __name__ == "__main__":

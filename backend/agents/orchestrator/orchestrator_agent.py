@@ -440,6 +440,14 @@ class SubmitResponse(Model):
     status: str
     health_event_count: int
     efficiency_event_count: int
+    health_findings: int = 0
+    efficiency_findings: int = 0
+    highest_severity: str = "low"
+    report_id: str = ""
+
+
+HEALTH_AGENT_URL = "http://localhost:8001"
+EFFICIENCY_AGENT_URL = "http://localhost:8002"
 
 
 @orchestrator.on_rest_get("/health", HealthResponse)
@@ -449,7 +457,7 @@ async def health_check(ctx: Context) -> HealthResponse:
 
 @orchestrator.on_rest_post("/api/analyze", OrchestratorRequest, SubmitResponse)
 async def handle_submit(ctx: Context, req: OrchestratorRequest) -> SubmitResponse:
-    """REST entry point for the analysis pipeline (called by FastAPI backend)."""
+    """REST entry point: calls agents via HTTP, compiles report, posts to backend."""
     session_id = str(uuid4())
     ctx.logger.info(
         f"REST submit: session={session_id} clip={req.clip_id} "
@@ -469,44 +477,100 @@ async def handle_submit(ctx: Context, req: OrchestratorRequest) -> SubmitRespons
         training_doc_url=req.training_doc_url or "",
         actions=req.actions,
         user_sender_address="",
-        awaiting_health=len(req.health_events) > 0,
-        awaiting_efficiency=len(req.efficiency_events) > 0,
+        awaiting_health=False,
+        awaiting_efficiency=False,
     )
+
+    async with httpx.AsyncClient(timeout=30.0) as client:
+        if req.health_events:
+            health_payload = HealthEvalRequest(
+                chat_session_id=session_id,
+                clip_id=req.clip_id,
+                employee_id=req.employee_id,
+                station_id=req.station_id or "",
+                jurisdiction=req.jurisdiction,
+                strictness=req.strictness,
+                event_candidates=req.health_events,
+                user_sender_address=orchestrator.address,
+            )
+            try:
+                resp = await client.post(
+                    f"{HEALTH_AGENT_URL}/evaluate",
+                    json=health_payload.model_dump(),
+                )
+                if resp.status_code == 200:
+                    data = resp.json()
+                    state.health_findings = [f for f in data.get("findings", [])]
+                    state.health_code_backed = data.get("code_backed_count", 0)
+                    state.health_guidance = data.get("guidance_count", 0)
+                    state.highest_severity = _max_severity(
+                        state.highest_severity, data.get("highest_severity", "low")
+                    )
+                    ctx.logger.info(
+                        f"Health agent returned {len(state.health_findings)} findings"
+                    )
+                else:
+                    ctx.logger.warning(f"Health agent returned {resp.status_code}")
+            except Exception as e:
+                ctx.logger.warning(f"Health agent call failed: {e}")
+
+        if req.efficiency_events:
+            eff_payload = EfficiencyEvalRequest(
+                chat_session_id=session_id,
+                clip_id=req.clip_id,
+                employee_id=req.employee_id,
+                station_id=req.station_id or "",
+                strictness=req.strictness,
+                event_candidates=req.efficiency_events,
+                user_sender_address=orchestrator.address,
+            )
+            try:
+                resp = await client.post(
+                    f"{EFFICIENCY_AGENT_URL}/evaluate",
+                    json=eff_payload.model_dump(),
+                )
+                if resp.status_code == 200:
+                    data = resp.json()
+                    state.efficiency_findings = [f for f in data.get("findings", [])]
+                    state.efficiency_count = data.get("confirmed_issue_count", 0)
+                    state.highest_severity = _max_severity(
+                        state.highest_severity, data.get("highest_severity", "low")
+                    )
+                    ctx.logger.info(
+                        f"Efficiency agent returned {len(state.efficiency_findings)} findings"
+                    )
+                else:
+                    ctx.logger.warning(f"Efficiency agent returned {resp.status_code}")
+            except Exception as e:
+                ctx.logger.warning(f"Efficiency agent call failed: {e}")
+
     state_service.set(session_id, state)
 
-    if req.health_events:
-        await ctx.send(HEALTH_AGENT_ADDRESS, HealthEvalRequest(
-            chat_session_id=session_id,
-            clip_id=req.clip_id,
-            employee_id=req.employee_id,
-            station_id=req.station_id or "",
-            jurisdiction=req.jurisdiction,
-            strictness=req.strictness,
-            event_candidates=req.health_events,
-            user_sender_address=orchestrator.address,
-        ))
-        ctx.logger.info("Sent health eval request")
+    report_id = ""
+    try:
+        report = await _post_report_to_backend(state)
+        if report:
+            report_id = report.get("id", "")
+            ctx.logger.info(f"Report posted to backend: {report_id}")
+        else:
+            ctx.logger.warning("Failed to post report to backend")
+    except Exception as e:
+        ctx.logger.exception(f"Backend POST failed: {e}")
 
-    if req.efficiency_events:
-        await ctx.send(EFFICIENCY_AGENT_ADDRESS, EfficiencyEvalRequest(
-            chat_session_id=session_id,
-            clip_id=req.clip_id,
-            employee_id=req.employee_id,
-            station_id=req.station_id or "",
-            strictness=req.strictness,
-            event_candidates=req.efficiency_events,
-            user_sender_address=orchestrator.address,
-        ))
-        ctx.logger.info("Sent efficiency eval request")
+    if state.actions:
+        await _trigger_browser_actions(ctx, state)
 
-    if not req.health_events and not req.efficiency_events:
-        await _finalize_pipeline(ctx, session_id)
+    state_service.remove(session_id)
 
     return SubmitResponse(
         session_id=session_id,
-        status="processing",
+        status="complete",
         health_event_count=len(req.health_events),
         efficiency_event_count=len(req.efficiency_events),
+        health_findings=len(state.health_findings),
+        efficiency_findings=len(state.efficiency_findings),
+        highest_severity=state.highest_severity,
+        report_id=report_id,
     )
 
 
