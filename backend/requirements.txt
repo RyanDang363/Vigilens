@@ -6,3 +6,4 @@ python-dotenv
 pydantic[email]
 pydantic-settings
 aiosqlite
+twelvelabs

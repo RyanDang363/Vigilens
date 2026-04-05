@@ -1,3 +1,6 @@
 backend/.venv/
 backend/.env
+backend/videos/
+backend/app.db
+__pycache__/
 node_modules/
