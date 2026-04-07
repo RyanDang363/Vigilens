@@ -24,6 +24,10 @@ node_modules/
 # IDE
 .vscode/
 .idea/
+.claude/
+
+# uAgents runtime state (payment sessions, local agent data — may contain secrets)
+/*_data.json
 
 # Examples (reference only, not part of our project)
 innovation-lab-examples/
