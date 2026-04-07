@@ -31,3 +31,7 @@ innovation-lab-examples/
 # OS
 .DS_Store
 Thumbs.db
+
+# Markdown reference docs (local only; README.md files stay tracked)
+*.md
+!**/README.md
