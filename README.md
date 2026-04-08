@@ -1,6 +1,6 @@
 # Vigilens
 
-Kitchen and workspace monitoring demo: video understanding, health and efficiency agents (Fetch.ai uAgents), orchestration, and a React dashboard.
+Kitchen and workspace monitoring demo: video understanding, health and efficiency agents (Fetch.ai uAgents), orchestration, and a React dashboard.  Built for UCSD DiamondHacks 2026
 
 ## Prerequisites
 
@@ -8,7 +8,7 @@ Kitchen and workspace monitoring demo: video understanding, health and efficienc
 - **Node.js** 18+ and **npm**  
 - **Git**
 
-Optional, for full features: [TwelveLabs](https://twelvelabs.io/) API key, Fetch.ai / Agentverse setup, Browser Use, Google OAuth, Stripe (see [Environment variables](#environment-variables)).
+For full features: [TwelveLabs](https://twelvelabs.io/) API key, Fetch.ai / Agentverse setup, Browser Use, Google OAuth, Stripe (see [Environment variables](#environment-variables)).
 
 ## Download
 
@@ -18,8 +18,6 @@ Clone the repository and enter the project root:
 git clone <repository-url>
 cd Vigilens
 ```
-
-Use the HTTPS or SSH URL from your Git host’s “Clone” button.
 
 ## Backend setup
 
@@ -64,15 +62,14 @@ cd ..
 
 Create a file at **`backend/.env`** (it is gitignored). The API loads this path first.
 
-| Variable | Required for | Notes |
-|----------|----------------|-------|
-| `TWELVELABS_API_KEY` | Video indexing / detection | Empty key skips or limits TwelveLabs features. |
-| `HEALTH_AGENT_SEED`, `EFFICIENCY_AGENT_SEED`, `BROWSER_AGENT_SEED`, `ORCHESTRATOR_SEED` | Stable agent identities | Optional; defaults exist for local dev. |
-| `BROWSER_USE_API_KEY`, `GOOGLE_PROFILE_ID` | Browser agent automation | Optional. |
-| `STRIPE_SECRET_KEY`, `STRIPE_PUBLISHABLE_KEY` | Paid report checkout | Optional; lazy-loaded when used. |
-| `ASI_ONE_API_KEY`, `GEMINI_API_KEY` | Optional LLM features | Optional. |
+| Variable | Required for |
+|----------|----------------|
+| `TWELVELABS_API_KEY` | Video indexing / detection |
+| `HEALTH_AGENT_SEED`, `EFFICIENCY_AGENT_SEED`, `BROWSER_AGENT_SEED`, `ORCHESTRATOR_SEED` | Stable agent identities |
+| `BROWSER_USE_API_KEY`, `GOOGLE_PROFILE_ID` | Browser agent automation |
+| `STRIPE_SECRET_KEY`, `STRIPE_PUBLISHABLE_KEY` | Paid report checkout |
+| `ASI_ONE_API_KEY`, `GEMINI_API_KEY` | LLM features |
 
-Never commit real secrets; keep them only in `backend/.env`.
 
 ## Run the application
 
